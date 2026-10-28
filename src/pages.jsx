@@ -355,8 +355,14 @@ export function VIPCheckout() {
     const r = await api.depositInit(price, "card", user.email, true);
     
     setLoading(false);
-    if (r?.url) window.location.href = r.url;
-    else setError(r?.error || "Failed to initialize payment.");
+    if (r?.url) {
+       // IMPORTANT: Save the VIP intent before redirecting to Paystack
+       localStorage.setItem('pending_vip_tier', tier);
+       localStorage.setItem('pending_vip_price', price);
+       window.location.href = r.url;
+    } else {
+       setError(r?.error || "Failed to initialize payment.");
+    }
   }
 
   return (

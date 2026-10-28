@@ -8,7 +8,7 @@ import {
   Settings as SettingsIcon, LogOut, X, Info, ArrowLeft, CreditCard, LockKeyhole, AlertCircle,
   Building2, Bitcoin, PiggyBank, BarChart3, PieChart, Search, XCircle, Loader2, ThumbsUp,
   Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
-  Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon
+  Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle
 } from "lucide-react";
 import Terms from "./terms";
 import { 
@@ -87,56 +87,62 @@ export const api = {
   },
   resolveAccount: (account_number, bank_code) => call("index/resolve-account", { account_number, bank_code }),
   withdraw: (p) => call("index/withdraw-request", p),
+  
   claimBonus: async (amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("transactions").insert({ user_id: user.id, type: "bonus", amount, status: "success", reference: `BONUS-${Date.now()}` });
-    const { data: wallet } = await supabase.from("wallets").select("available").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount }).eq("user_id", user.id);
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
     await supabase.from("notifications").insert({ user_id: user.id, title: "Bonus Claimed", message: `You earned ₦${amount} from the tap game!`, type: "bonus" });
     return { success: true };
   },
+  
   invest: (plan_id, amount, daily_profit, matured_at) => call("index/invest", { plan_id, amount, daily_profit, matured_at }),
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("investments").update({ last_daily_claim: new Date().toISOString() }).eq("id", investment_id);
-    const { data: wallet } = await supabase.from("wallets").select("available, earnings").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, earnings: (wallet?.earnings || 0) + amount }).eq("user_id", user.id);
+    const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, earnings: (wallet?.earnings || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
     await supabase.from("transactions").insert({ user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}` });
     return { success: true };
   },
+
   claimDailyLogin: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
     if (profile?.last_login_claim && (now - new Date(profile.last_login_claim)) / 1000 < 86400) return { error: "Already claimed" };
     await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
-    const { data: wallet } = await supabase.from("wallets").select("available, earnings").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100 }).eq("user_id", user.id);
+    const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
     await supabase.from("transactions").insert({ user_id: user.id, type: "daily_login", amount: 100, status: "success", reference: `LOGIN-${Date.now()}` });
     await supabase.from("notifications").insert({ user_id: user.id, title: "Daily Login Bonus", message: "You received ₦100 for logging in today.", type: "deposit" });
     return { success: true };
   },
+
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("referral_earnings").eq("id", user.id).single();
     const amount = (profile?.referral_earnings || 0) > 0 ? 200 : 1000;
     await supabase.from("profiles").update({ referral_earnings: (profile?.referral_earnings || 0) + amount }).eq("id", user.id);
-    const { data: wallet } = await supabase.from("wallets").select("available").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount }).eq("user_id", user.id);
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
     await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount, status: "success", reference: `REF-${Date.now()}` });
     await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amount} for sharing your link!`, type: "referral" });
     return { amount };
   },
+
   upgradeVIP: async (tier, cost) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("profiles").update({ vip_tier: tier }).eq("id", user.id);
     await supabase.from("transactions").insert({ user_id: user.id, type: "vip_purchase", amount: cost, status: "success", reference: `VIP-${Date.now()}` });
-    const { data: wallet } = await supabase.from("wallets").select("available").eq("user_id", user.id).single();
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
     const bonus = tier === "VIP 1" ? 5000 : tier === "VIP 2" ? 10000 : 17000;
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus }).eq("user_id", user.id);
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus, total: (wallet?.total || 0) + bonus }).eq("user_id", user.id);
     await supabase.from("notifications").insert({ user_id: user.id, title: "VIP Upgraded", message: `You are now a ${tier}. ₦${bonus} investment bonus added to your wallet.`, type: "system" });
     return { success: true };
   },
+  
   uploadAvatar: async (file, userId) => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
@@ -145,6 +151,24 @@ export const api = {
     const { data } = await supabase.storage.from('avatars').getPublicUrl(fileName);
     await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', userId);
     return data.publicUrl;
+  },
+
+  getAdminWithdrawals: async () => {
+    return supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false });
+  },
+  approveWithdrawal: async (withdrawalId, user_id, amount) => {
+    await supabase.from("withdrawals").update({ status: "approved" }).eq("id", withdrawalId);
+    await supabase.from("transactions").update({ status: "success" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
+    await supabase.from("notifications").insert({ user_id: user_id, title: "Withdrawal Approved", message: `Your withdrawal of ₦${amount} has been sent to your bank.`, type: "withdraw" });
+    return { success: true };
+  },
+  rejectWithdrawal: async (withdrawalId, user_id, amount) => {
+    await supabase.from("withdrawals").update({ status: "rejected" }).eq("id", withdrawalId);
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user_id);
+    await supabase.from("transactions").update({ status: "failed" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
+    await supabase.from("notifications").insert({ user_id: user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected. Funds refunded.`, type: "withdraw" });
+    return { success: true };
   }
 };
 
@@ -223,6 +247,11 @@ function Hero() {
             <Sparkles className="h-4 w-4" />Trusted by 550,000+ investors
           </div>
           <h1 className="text-5xl font-bold leading-tight text-white lg:text-7xl">Grow your wealth with <span className="bg-linear-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">confidence</span></h1>
+          
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
+            PrimeVest is your all-in-one wealth management platform. Whether you're looking to grow your savings with high-yield portfolios, invest in real estate, or earn through our interactive bonus games, we provide a secure, transparent, and effortless way to build your financial future.
+          </p>
+
           <div className="mt-8 flex flex-wrap gap-4">
             <Link to="/signup" className="inline-flex items-center rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-500">Start Investing<ArrowRight className="ml-2 h-4 w-4" /></Link>
             <a href="#strategies" className="rounded-lg border border-slate-600 px-6 py-3 font-semibold text-slate-200 transition hover:bg-slate-800">View Strategies</a>
@@ -790,6 +819,88 @@ function HomePage() {
 }
 
 // ============================================================
+// ADMIN DASHBOARD
+// ============================================================
+function AdminDashboard() {
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(null);
+
+  const loadWithdrawals = async () => {
+    const { data } = await api.getAdminWithdrawals();
+    setWithdrawals(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadWithdrawals();
+  }, []);
+
+  const handleApprove = async (w) => {
+    if (!window.confirm(`Approve ₦${w.amount.toLocaleString()} to ${w.account_name} (${w.bank_name})?`)) return;
+    setProcessing(w.id);
+    await api.approveWithdrawal(w.id, w.user_id, w.amount);
+    await loadWithdrawals();
+    setProcessing(null);
+  };
+
+  const handleReject = async (w) => {
+    if (!window.confirm(`Reject withdrawal and refund ₦${w.amount.toLocaleString()}?`)) return;
+    setProcessing(w.id);
+    await api.rejectWithdrawal(w.id, w.user_id, w.amount);
+    await loadWithdrawals();
+    setProcessing(null);
+  };
+
+  if (loading) return <LoadingScreen />;
+
+  return (
+    <div className="min-h-screen bg-[#070D1A] p-6 text-white">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Admin Panel</h1>
+            <p className="text-slate-400 mt-1">Manage pending withdrawals</p>
+          </div>
+          <button onClick={() => window.location.href = "/home"} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 hover:bg-white/10">Back to App</button>
+        </div>
+
+        {withdrawals.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-10 text-center">
+            <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold">All caught up!</h2>
+            <p className="text-slate-400">No pending withdrawals at the moment.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {withdrawals.map((w) => (
+              <div key={w.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded">PENDING</span>
+                    <span className="text-sm text-slate-400">{new Date(w.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="font-bold text-lg">₦{w.amount.toLocaleString()}</p>
+                  <p className="text-sm text-slate-300 mt-1">{w.account_name} - {w.account_number} ({w.bank_name})</p>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button onClick={() => handleApprove(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-emerald-600 px-6 py-3 font-semibold hover:bg-emerald-500 disabled:opacity-50 text-sm">
+                    {processing === w.id ? "..." : "Approve"}
+                  </button>
+                  <button onClick={() => handleReject(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-red-600/10 border border-red-500/20 text-red-400 px-6 py-3 font-semibold hover:bg-red-600/20 disabled:opacity-50 text-sm">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ROUTES
 // ============================================================
 function App() {
@@ -817,6 +928,9 @@ function App() {
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/help" element={<Help />} />
+        
+        {/* SECRET ADMIN ROUTE */}
+        <Route path="/admin" element={<AdminDashboard />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
