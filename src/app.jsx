@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import Terms from "./terms";
 import { 
-  Deposit, DepositPayment, DepositCard, DepositTransfer, DepositBitcoin,
+  Deposit, DepositPayment, DepositCard, DepositBitcoin,
   Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest, 
   Portfolio, Settings, Help 
 } from "./pages";
