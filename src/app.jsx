@@ -10,7 +10,7 @@ import {
   Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
   Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon
 } from "lucide-react";
-import Terms from "./Terms";
+import Terms from "./terms";
 import { 
   Deposit, DepositPayment, DepositCard, DepositTransfer, DepositBitcoin,
   Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest, 
