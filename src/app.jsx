@@ -363,7 +363,24 @@ function Testimonials() {
   );
 }
 
+// ============================================================
+// UPDATED LANDING PAGE (Redirects logged-in users)
+// ============================================================
 function LandingPage() {
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        window.location.href = "/home"; 
+      } else {
+        setCheckingAuth(false);
+      }
+    });
+  }, []);
+
+  if (checkingAuth) return <LoadingScreen />;
+
   return (
     <main className="min-h-screen bg-slate-950">
       <Navbar />
