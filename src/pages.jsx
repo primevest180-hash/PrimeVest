@@ -6,7 +6,7 @@ import {
   TrendingUp, Timer, Rocket, Zap, HelpCircle, LogOut, User, Gamepad2, Home as HomeIcon, 
   Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon
 } from "lucide-react";
-import { api, supabase } from "./App";
+import { api, supabase } from "./app";
 
 // ============================================================
 // DEPOSIT PAGES
