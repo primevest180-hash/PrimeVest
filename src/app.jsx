@@ -191,6 +191,25 @@ function LoadingScreen() {
 }
 
 // ============================================================
+// GLOBAL TOAST
+// ============================================================
+const Toast = ({ message, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] rounded-2xl border border-emerald-500/30 bg-[#0D1526] px-6 py-4 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+      </div>
+      <p className="text-sm font-semibold text-white">{message}</p>
+    </div>
+  );
+};
+
+// ============================================================
 // PROTECTED ROUTE
 // ============================================================
 function ProtectedRoute() {
@@ -565,6 +584,9 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   
+  // TOAST STATE ADDED HERE
+  const [toastMsg, setToastMsg] = useState("");
+
   const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
@@ -623,6 +645,8 @@ function HomePage() {
     if (!canClaimDaily) return;
     const r = await api.claimDailyLogin();
     if (r.error) return alert("You can only claim once every 24 hours.");
+    
+    setToastMsg("You have claimed your bonus of ₦100! It will reflect on your dashboard.");
     loadData();
   }
 
@@ -650,6 +674,9 @@ function HomePage() {
   return (
     <div className="min-h-screen bg-[#070D1A] pb-28 text-white relative">
       
+      {/* ADDED TOAST HERE */}
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+
       <button onClick={() => setShowSupport(true)} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl shadow-blue-900/50 hover:bg-blue-500 transition">
         <Headphones className="h-6 w-6" />
       </button>
@@ -937,7 +964,6 @@ function App() {
         <Route path="/deposit" element={<Deposit />} />
         <Route path="/deposit/payment" element={<DepositPayment />} />
         <Route path="/deposit/card" element={<DepositCard />} />
-        <Route path="/deposit/transfer" element={<DepositTransfer />} />
         <Route path="/deposit/bitcoin" element={<DepositBitcoin />} />
         <Route path="/withdraw" element={<Withdraw />} />
         <Route path="/withdraw/account" element={<WithdrawAccount />} />

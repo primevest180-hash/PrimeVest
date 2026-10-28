@@ -9,6 +9,25 @@ import {
 import { api, supabase } from "./app";
 
 // ============================================================
+// GLOBAL TOAST (FLOATING NOTIFICATION)
+// ============================================================
+const Toast = ({ message, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] rounded-2xl border border-emerald-500/30 bg-[#0D1526] px-6 py-4 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+      </div>
+      <p className="text-sm font-semibold text-white">{message}</p>
+    </div>
+  );
+};
+
+// ============================================================
 // DEPOSIT PAGES
 // ============================================================
 export function Deposit() {
@@ -53,9 +72,9 @@ export function DepositPayment() {
       <main className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6"><p className="text-sm text-blue-200">Amount</p><h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2></div>
         <div className="mt-6 space-y-4">
-          <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Card (Paystack)</h3></div></a>
-          <a href={`/deposit/transfer?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><Building2 className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Bank Transfer</h3></div></a>
-          <a href={`/deposit/bitcoin?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10"><Bitcoin className="h-7 w-7 text-amber-400" /></div><div><h3 className="font-semibold">Bitcoin</h3></div></a>
+          {/* REMOVED BANK TRANSFER HERE */}
+          <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-blue-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Card (Paystack)</h3></div></a>
+          <a href={`/deposit/bitcoin?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-amber-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10"><Bitcoin className="h-7 w-7 text-amber-400" /></div><div><h3 className="font-semibold">Bitcoin</h3></div></a>
         </div>
       </main>
     </div>
@@ -83,29 +102,6 @@ export function DepositCard() {
         <div className="rounded-2xl border border-white/8 bg-[#0D1526] p-6">
           {error && <div className="mt-4 rounded-xl bg-red-500/5 p-4 text-sm text-red-300">{error}</div>}
           <button onClick={pay} disabled={loading} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold disabled:opacity-60"><LockKeyhole size={17} />{loading ? "Redirecting..." : `Pay ₦${fmt}`}</button>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-export function DepositTransfer() {
-  const p = new URLSearchParams(window.location.search);
-  const amount = p.get("amount") || "0";
-  const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
-  return (
-    <div className="min-h-screen bg-slate-950 pb-24 text-white">
-      <header className="border-b border-blue-400/10 bg-slate-950/95"><div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4"><a href={`/deposit/payment?amount=${amount}`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a><h1 className="text-xl font-bold">Bank Transfer</h1></div></header>
-      <main className="mx-auto max-w-2xl px-4 py-10">
-        <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6"><p className="text-sm text-blue-200">Amount</p><h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2></div>
-        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <Building2 className="h-10 w-10 text-blue-400" />
-          <h2 className="mt-5 text-2xl font-bold">Transfer Details</h2>
-          <div className="mt-6 rounded-2xl bg-slate-950 p-5">
-            <p className="text-xs text-slate-500">Bank</p><p className="mt-1 font-semibold">PrimeVest</p>
-            <div className="mt-5 border-t border-slate-800 pt-5"><p className="text-xs text-slate-500">Account</p><p className="mt-2 text-2xl font-bold">0123456789</p></div>
-            <div className="mt-5 border-t border-slate-800 pt-5"><p className="text-xs text-slate-500">Name</p><p className="mt-1 font-semibold">PrimeVest</p></div>
-          </div>
         </div>
       </main>
     </div>
@@ -347,16 +343,10 @@ export function VIPCheckout() {
 
   async function pay() {
     setLoading(true); setError("");
-    
-    // Get current user email
     const { data: { user } } = await supabase.auth.getUser();
-    
-    // We use the api.depositInit with a special 'vip' flag to bypass minimum limits
     const r = await api.depositInit(price, "card", user.email, true);
-    
     setLoading(false);
     if (r?.url) {
-       // IMPORTANT: Save the VIP intent before redirecting to Paystack
        localStorage.setItem('pending_vip_tier', tier);
        localStorage.setItem('pending_vip_price', price);
        window.location.href = r.url;
@@ -401,13 +391,13 @@ export function VIPCheckout() {
 }
 
 // ============================================================
-// BONUS GAME (With Speedometer)
+// BONUS GAME (FIXED SPEEDOMETER & TOASTS)
 // ============================================================
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [clickSpeed, setClickSpeed] = useState(0);
+  const [toastMsg, setToastMsg] = useState("");
   
   const clicks = useRef([]);
   const moneyValue = Math.floor(points / 2); 
@@ -415,10 +405,10 @@ export function BonusGame() {
 
   const handleTap = () => {
     setPoints((p) => p + 1); 
-    setSuccess(false);
     
     const now = Date.now();
     clicks.current.push(now);
+    // Keep only clicks in the last 1000ms
     clicks.current = clicks.current.filter(t => now - t < 1000);
     setClickSpeed(clicks.current.length);
   };
@@ -428,23 +418,33 @@ export function BonusGame() {
     setClaiming(true);
     await api.claimBonus(moneyValue);
     setClaiming(false);
-    setSuccess(true);
-    setTimeout(() => { window.location.href = "/home"; }, 1500);
+    
+    // Show toast and reset points instead of redirecting
+    setToastMsg(`You have claimed ₦${moneyValue}! It will show on your dashboard shortly.`);
+    setPoints(0);
   };
 
+  // Speedometer ticker (decays the speed if you stop clicking)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
       clicks.current = clicks.current.filter(t => now - t < 1000);
       setClickSpeed(clicks.current.length);
-    }, 200);
+    }, 100);
     return () => clearInterval(timer);
   }, []);
 
+  // Calculate needle rotation (0 clicks = -85deg, 15+ clicks = +85deg)
+  const maxSpeed = 15;
+  const speedPercentage = Math.min(clickSpeed / maxSpeed, 1);
+  // -85 degrees is far left, +85 degrees is far right
+  const rotation = -85 + (speedPercentage * 170); 
+
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none">
-      {success && <div className="absolute top-10 left-1/2 -translate-x-1/2 rounded-xl border border-green-500/30 bg-green-500/20 px-6 py-3 text-sm font-semibold text-green-300 backdrop-blur-md">Bonus claimed! Redirecting...</div>}
       
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
       <p className="text-sm text-slate-400 mb-6 text-center px-4">2 points = ₦1</p>
       
@@ -455,7 +455,7 @@ export function BonusGame() {
         <div className="w-64 h-64 rounded-full border-[12px] border-transparent border-r-red-500/50 border-b-red-500/50 absolute -bottom-32 rotate-[45deg]"></div>
         <div 
           className="absolute bottom-0 w-1 h-28 bg-white origin-bottom rounded-t-full transition-transform duration-100 ease-out shadow-[0_0_15px_rgba(255,255,255,0.8)]"
-          style={{ transform: `rotate(${Math.min(clickSpeed * 8, 85) - 85}deg)` }}
+          style={{ transform: `rotate(${rotation}deg)` }}
         ></div>
         <div className="absolute bottom-0 w-4 h-4 bg-white rounded-full shadow-lg"></div>
         <div className="absolute bottom-4 flex flex-col items-center">
@@ -624,11 +624,15 @@ export function Invest() {
   );
 }
 
+// ============================================================
+// PORTFOLIO (With Investment Toast)
+// ============================================================
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
   const [history, setHistory] = useState([]);
   const [activeTab, setActiveTab] = useState("portfolio");
   const [claiming, setClaiming] = useState(null);
+  const [toastMsg, setToastMsg] = useState("");
 
   const load = async () => { 
     const [p, h] = await Promise.all([api.portfolio(), api.history()]);
@@ -644,12 +648,15 @@ export function Portfolio() {
     setClaiming(h.id);
     const dailyProfit = h.amount * (h.plans.expected_return / 100); 
     await api.claimInvestment(h.id, dailyProfit);
-    await load();
+    await load(); // Refresh data immediately
     setClaiming(null);
+    setToastMsg(`You have claimed your investment! The funds will show on your dashboard.`);
   }
 
   return (
     <div className="min-h-screen bg-slate-950 pb-24 text-white p-4">
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+
       <header className="mb-6"><a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a></header>
       <h1 className="text-2xl font-bold mb-4">My Portfolio</h1>
       
