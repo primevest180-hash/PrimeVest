@@ -17,9 +17,6 @@ import {
   Portfolio, Settings, Help 
 } from "./pages";
 
-// ============================================================
-// SUPABASE CLIENT + API
-// ============================================================
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -48,9 +45,7 @@ async function notifyAdmin(name, email) {
 
 export const api = {
   signup: async (name, email, password, ref) => {
-    const res = await supabase.auth.signUp({ 
-      email, password, options: { data: { name, ref } } 
-    });
+    const res = await supabase.auth.signUp({ email, password, options: { data: { name, ref } } });
     if (!res.error) notifyAdmin(name, email);
     return res;
   },
@@ -91,15 +86,12 @@ export const api = {
   
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
-    // Deduct immediately to prevent double spending
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ 
       available: (wallet?.available || 0) - p.amount, 
       total: (wallet?.total || 0) - p.amount 
     }).eq("user_id", user.id);
-    
     const r = await call("index/withdraw-request", p);
-    
     await supabase.from("transactions").insert({ user_id: user.id, type: "withdraw", amount: p.amount, status: "pending", reference: `WD-${Date.now()}` });
     return r;
   },
@@ -196,9 +188,6 @@ export const api = {
   }
 };
 
-// ============================================================
-// BRANDED LOADING & TOAST
-// ============================================================
 function LoadingScreen() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070D1A]">
@@ -240,9 +229,340 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
-// ============================================================
-// HOME PAGE (GOLD VIP, FIXED CRASHES)
-// ============================================================
+function Navbar() {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <nav className="fixed left-0 right-0 top-0 z-50 px-3 py-3 sm:px-4 sm:py-4 lg:px-8">
+      <div className="mx-auto max-w-7xl rounded-2xl border border-blue-400/20 bg-blue-950/90 shadow-2xl shadow-blue-950/30 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 lg:px-7">
+          <a href="#home" className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-900/40 sm:h-11 sm:w-11"><ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" /></div>
+            <div><h2 className="text-base font-bold tracking-tight text-white sm:text-lg">PrimeVest</h2><p className="text-[8px] font-medium uppercase tracking-[0.18em] text-blue-300 sm:text-[9px]">Wealth Management</p></div>
+          </a>
+          <div className="hidden items-center gap-8 lg:flex">
+            <a href="#strategies" className="text-sm font-medium text-slate-300 transition hover:text-blue-300">Strategies</a>
+            <a href="#about" className="text-sm font-medium text-slate-300 transition hover:text-blue-300">About</a>
+          </div>
+          <div className="hidden items-center gap-3 lg:flex">
+            <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-blue-900/60 hover:text-white">Sign in</Link>
+            <Link to="/signup" className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition hover:bg-blue-500">Get Started</Link>
+          </div>
+          <button onClick={() => setIsOpen(!isOpen)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-900/40 text-slate-200 lg:hidden">
+            {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function Hero() {
+  return (
+    <section id="home" className="relative min-h-screen overflow-hidden bg-slate-950 pt-10">
+      <div className="absolute inset-0 [background:linear-gradient(135deg,#020617,#172554,#0f172a)]" />
+      <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-blue-600/20 blur-3xl" />
+      <div className="relative mx-auto max-w-7xl px-6 py-20 lg:px-12 lg:py-28">
+        <div className="max-w-3xl">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
+            <Sparkles className="h-4 w-4" />Trusted by 550,000+ investors
+          </div>
+          <h1 className="text-5xl font-bold leading-tight text-white lg:text-7xl">Grow your wealth with <span className="bg-linear-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">confidence</span></h1>
+          
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
+            PrimeVest is your all-in-one wealth management platform. Whether you're looking to grow your savings with high-yield portfolios, invest in real estate, or earn through our interactive bonus games, we provide a secure, transparent, and effortless way to build your financial future.
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-4">
+            <Link to="/signup" className="inline-flex items-center rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-500">Start Investing<ArrowRight className="ml-2 h-4 w-4" /></Link>
+            <a href="#strategies" className="rounded-lg border border-slate-600 px-6 py-3 font-semibold text-slate-200 transition hover:bg-slate-800">View Strategies</a>
+          </div>
+          <div className="mt-10 flex flex-wrap gap-6 text-sm text-slate-400">
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />SEC Registered</div>
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />N2B+ Managed</div>
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />4.9/5 Rating</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Stats() {
+  const stats = [
+    { icon: TrendingUp, value: "12.4%", label: "Average Annual Return", color: "bg-blue-500/10 text-blue-400" },
+    { icon: Users, value: "550K+", label: "Active Investors", color: "bg-indigo-500/10 text-indigo-400" },
+    { icon: Building2, value: "N2.1B", label: "Assets Under Management", color: "bg-sky-500/10 text-sky-400" },
+    { icon: Globe2, value: "40+", label: "Global Markets", color: "bg-blue-500/10 text-blue-400" },
+  ];
+  return (
+    <section className="relative z-10 mx-auto -mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div key={s.label} className="rounded-2xl border border-blue-400/10 bg-slate-900/90 p-6 shadow-xl backdrop-blur-xl">
+              <div className="flex items-center gap-4">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}><Icon className="h-6 w-6" /></div>
+                <div><p className="text-2xl font-bold text-white">{s.value}</p><p className="mt-1 text-sm text-slate-400">{s.label}</p></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function InvestmentCards() {
+  const strategies = [
+    { icon: LineChart, title: "Growth Portfolio", description: "High-potential stocks and ETFs", return: "12.5%", risk: "Moderate", color: "bg-blue-500/10 text-blue-400", badge: "Popular" },
+    { icon: Building2, title: "Real Estate", description: "REITs and property funds", return: "11.9%", risk: "Moderate", color: "bg-sky-500/10 text-sky-400", badge: "New" },
+    { icon: Bitcoin, title: "Crypto Index", description: "Diversified digital assets", return: "22.0%", risk: "High", color: "bg-amber-500/10 text-amber-400", badge: "High Growth" },
+    { icon: Users, title: "Affiliate Marketing", description: "Digital commerce assets", return: "15.0%", risk: "Moderate", color: "bg-emerald-500/10 text-emerald-400", badge: "Trending" },
+  ];
+  return (
+    <section id="strategies" className="relative bg-slate-950 px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto mb-12 flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-400">Investment Options</p>
+          <h2 className="text-3xl font-bold text-white sm:text-4xl">Investment Strategies</h2>
+          <p className="mt-3 max-w-xl text-slate-400">Choose a strategy that matches your goals.</p>
+        </div>
+      </div>
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {strategies.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div key={s.title} className="rounded-2xl border border-blue-400/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl transition hover:-translate-y-2 hover:border-blue-400/30">
+              <div className="flex items-start justify-between">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}><Icon className="h-6 w-6" /></div>
+                <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">{s.badge}</span>
+              </div>
+              <h3 className="mt-5 text-lg font-bold text-white">{s.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">{s.description}</p>
+              <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">
+                <div><p className="text-xs text-slate-500">Avg. Return</p><p className="mt-1 text-xl font-bold text-blue-400">{s.return}</p></div>
+                <div className="text-right"><p className="text-xs text-slate-500">Risk</p><p className="mt-1 text-sm font-medium text-slate-300">{s.risk}</p></div>
+              </div>
+              <Link to="/signup" className="mt-5 block w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-blue-500">Invest Now</Link>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Testimonials() {
+  const items = [
+    { name: "Olamide John", role: "Civil Servant", quote: "PrimeVest made investing feel approachable.", initials: "OJ", color: "bg-blue-600" },
+    { name: "Michael Chukwuma", role: "Business Owner", quote: "The automated tools made managing my investments easier.", initials: "MC", color: "bg-indigo-600" },
+    { name: "Joy Temi", role: "Marketing Director", quote: "PrimeVest's strategies made my goals clearer.", initials: "JT", color: "bg-sky-600" },
+  ];
+  return (
+    <section id="about" className="bg-slate-900 px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-12 text-center">
+          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-400">Client Stories</p>
+          <h2 className="text-3xl font-bold text-white sm:text-4xl">Trusted by thousands of investors</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          {items.map((t) => (
+            <div key={t.name} className="rounded-2xl border border-blue-400/10 bg-slate-800/60 p-6 shadow-xl">
+              <div className="mb-5 flex gap-1">{[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />)}</div>
+              <p className="text-sm leading-relaxed text-slate-300">"{t.quote}"</p>
+              <div className="mt-6 flex items-center gap-3 border-t border-slate-700 pt-5">
+                <div className={`flex h-11 w-11 items-center justify-center rounded-full ${t.color} text-sm font-bold text-white`}>{t.initials}</div>
+                <div><p className="text-sm font-semibold text-white">{t.name}</p><p className="text-xs text-slate-400">{t.role}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LandingPage() {
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        window.location.href = "/home"; 
+      } else {
+        setCheckingAuth(false);
+      }
+    });
+  }, []);
+
+  if (checkingAuth) return <LoadingScreen />;
+
+  return (
+    <main className="min-h-screen bg-slate-950">
+      <Navbar />
+      <Hero />
+      <Stats />
+      <InvestmentCards />
+      <Testimonials />
+    </main>
+  );
+}
+
+function Login() {
+  const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault(); setError(""); setLoading(true);
+    const { error } = await api.login(form.email.trim(), form.password);
+    setLoading(false);
+    if (error) return setError("Incorrect email or password.");
+    navigate("/home");
+  }
+
+  async function handleForgotPassword() {
+    if (!form.email) return alert("Please type your email address first, then click Forgot Password.");
+    const { error } = await supabase.auth.resetPasswordForEmail(form.email.trim(), { redirectTo: `${window.location.origin}/settings` });
+    if (error) alert(error.message);
+    else alert("Password reset link sent to your email!");
+  }
+
+  async function signInWith(provider) {
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
+  }
+
+  return (
+    <main className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl lg:grid-cols-2">
+        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
+          <Link to="/" className="inline-flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10"><ShieldCheck size={27} /></div>
+            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
+          </Link>
+          <div className="mt-24"><div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10"><TrendingUp size={30} /></div><h1 className="text-4xl font-bold leading-tight">Welcome back to your dashboard.</h1></div>
+        </section>
+        <section className="p-6 sm:p-10 lg:p-12">
+          <div className="mt-8 lg:mt-10"><p className="text-sm font-medium text-blue-400">WELCOME BACK</p><h2 className="mt-2 text-3xl font-bold">Log in</h2></div>
+          <form onSubmit={submit} className="mt-6 space-y-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Mail size={19} className="text-slate-500" /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" /></div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                <Lock size={19} className="text-slate-500" />
+                <input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your password" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-slate-500 hover:text-white">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end">
+              <button type="button" onClick={handleForgotPassword} className="text-xs text-blue-400 hover:text-blue-300">Forgot Password?</button>
+            </div>
+            {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+            <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Logging in..." : "Log In"}</button>
+          </form>
+          <div className="mt-6 space-y-3">
+             <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Continue with Google</button>
+             <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Continue with GitHub</button>
+          </div>
+          <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
+            <p>Don't have an account? <Link to="/signup" className="font-semibold text-blue-400">Create one</Link></p>
+            <Link to="/terms" className="text-xs text-slate-500 hover:text-slate-300">Terms & Conditions</Link>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function Signup() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const referral = params.get("ref") || "";
+  const [showPassword, setShowPassword] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault(); setError("");
+    if (!agreeTerms) return setError("You must agree to the Terms & Conditions.");
+    if (form.name.trim().length < 2) return setError("Enter your full name.");
+    if (form.password.length < 8) return setError("Password must be 8+ characters.");
+    if (form.password !== form.confirmPassword) return setError("Passwords don't match.");
+    setLoading(true);
+    const { error } = await api.signup(form.name.trim(), form.email.trim().toLowerCase(), form.password, referral);
+    setLoading(false);
+    if (error) return setError(error.message);
+    navigate("/home");
+  }
+
+  async function signInWith(provider) {
+    if (!agreeTerms) return setError("You must agree to the Terms & Conditions first.");
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
+  }
+
+  return (
+    <main className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl lg:grid-cols-2">
+        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
+          <Link to="/" className="inline-flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10"><ShieldCheck size={27} /></div>
+            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
+          </Link>
+          <div className="my-16">
+            <h1 className="text-4xl font-bold leading-tight">Create your PrimeVest account.</h1>
+            <div className="mt-8 space-y-4">
+              {["Access dashboard","Explore pages","Manage account"].map((i) => (
+                <div key={i} className="flex items-center gap-3"><CheckCircle2 size={19} className="text-blue-200" /><span className="text-sm text-blue-50">{i}</span></div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="p-6 sm:p-10 lg:p-12">
+          <div className="mt-8 lg:mt-3"><p className="text-sm font-medium text-blue-400">GET STARTED</p><h2 className="mt-2 text-3xl font-bold">Create account</h2></div>
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Full name</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><UserRound size={19} className="text-slate-500" /><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your name" /></div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Mail size={19} className="text-slate-500" /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" /></div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Lock size={19} className="text-slate-500" /><input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="8+ characters" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="text-slate-500 hover:text-white">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-300">Confirm password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Lock size={19} className="text-slate-500" /><input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Again" /></div>
+            </div>
+            <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Creating..." : "Create Account"}</button>
+          </form>
+          <div className="mt-6 space-y-3">
+             <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Sign up with Google</button>
+             <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Sign up with GitHub</button>
+          </div>
+          <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
+            <p>Already have an account? <Link to="/login" className="font-semibold text-blue-400">Log in</Link></p>
+            <div className="flex items-center gap-2 mt-2">
+              <input type="checkbox" id="terms" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="terms" className="text-xs text-slate-400">I agree to the <Link to="/terms" className="text-blue-400 hover:underline">Terms & Conditions</Link></label>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const [isUsd, setIsUsd] = useState(false);
@@ -398,7 +718,6 @@ function HomePage() {
             <div className={`relative h-10 w-10 rounded-full border overflow-hidden flex items-center justify-center ml-2 ${isVip ? 'border-amber-400/50 bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'border-blue-400/30 bg-blue-500/20'}`}>
               {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User size={16} className={isVip ? "text-amber-300" : "text-blue-300"} />}
               
-              {/* VIP CROWN ON PROFILE */}
               {isVip && (
                 <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 shadow-sm">
                   <Crown size={12} className="text-black" />
@@ -441,7 +760,6 @@ function HomePage() {
 
         <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
           
-          {/* MAIN BALANCE CARD - CHANGES TO GOLD IF VIP */}
           <div className={`rounded-2xl border p-6 transition-all duration-500 ${
             isVip 
               ? 'border-amber-400/30 bg-gradient-to-br from-[#2A1D00] via-[#5C4300] to-[#8A6600] shadow-[0_0_30px_rgba(245,158,11,0.15)]' 
@@ -596,9 +914,6 @@ function HomePage() {
   );
 }
 
-// ============================================================
-// ADMIN DASHBOARD
-// ============================================================
 function AdminDashboard() {
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -678,9 +993,6 @@ function AdminDashboard() {
   );
 }
 
-// ============================================================
-// ROUTES
-// ============================================================
 function App() {
   return (
     <Routes>
@@ -705,8 +1017,6 @@ function App() {
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/help" element={<Help />} />
-        
-        {/* SECRET ADMIN ROUTE */}
         <Route path="/admin" element={<AdminDashboard />} />
       </Route>
 

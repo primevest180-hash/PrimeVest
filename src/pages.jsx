@@ -8,10 +8,7 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
-// ============================================================
-// GLOBAL TOAST (FLOATING NOTIFICATION)
-// ============================================================
-const Toast = ({ message, onClose }) => {
+export const Toast = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 4000);
     return () => clearTimeout(timer);
@@ -27,9 +24,6 @@ const Toast = ({ message, onClose }) => {
   );
 };
 
-// ============================================================
-// DEPOSIT PAGES
-// ============================================================
 export function Deposit() {
   const [amount, setAmount] = useState("");
   const [region, setRegion] = useState("Nigeria");
@@ -140,9 +134,6 @@ export function DepositBitcoin() {
   );
 }
 
-// ============================================================
-// WITHDRAW PAGES
-// ============================================================
 export function Withdraw() {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
@@ -280,9 +271,6 @@ export function WithdrawSuccess() {
   );
 }
 
-// ============================================================
-// VIP & VIP CHECKOUT
-// ============================================================
 export function VIP() {
   const navigate = useNavigate();
   return (
@@ -389,9 +377,6 @@ export function VIPCheckout() {
   );
 }
 
-// ============================================================
-// BONUS GAME (FIXED SPEEDOMETER & TOASTS)
-// ============================================================
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
@@ -407,7 +392,6 @@ export function BonusGame() {
     
     const now = Date.now();
     clicks.current.push(now);
-    // Keep only clicks in the last 1000ms
     clicks.current = clicks.current.filter(t => now - t < 1000);
     setClickSpeed(clicks.current.length);
   };
@@ -418,12 +402,10 @@ export function BonusGame() {
     await api.claimBonus(moneyValue);
     setClaiming(false);
     
-    // Show toast and reset points instead of redirecting
     setToastMsg(`You have claimed ₦${moneyValue}! It will show on your dashboard shortly.`);
     setPoints(0);
   };
 
-  // Speedometer ticker (decays the speed if you stop clicking)
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
@@ -433,10 +415,8 @@ export function BonusGame() {
     return () => clearInterval(timer);
   }, []);
 
-  // Calculate needle rotation (0 clicks = -85deg, 15+ clicks = +85deg)
   const maxSpeed = 15;
   const speedPercentage = Math.min(clickSpeed / maxSpeed, 1);
-  // -85 degrees is far left, +85 degrees is far right
   const rotation = -85 + (speedPercentage * 170); 
 
   return (
@@ -447,7 +427,6 @@ export function BonusGame() {
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
       <p className="text-sm text-slate-400 mb-6 text-center px-4">2 points = ₦1</p>
       
-      {/* SPEEDOMETER */}
       <div className="w-64 h-32 relative overflow-hidden mb-6 flex justify-center items-end">
         <div className="w-64 h-64 rounded-full border-[12px] border-slate-800 absolute -bottom-32"></div>
         <div className="w-64 h-64 rounded-full border-[12px] border-transparent border-t-emerald-500/50 border-r-amber-500/50 absolute -bottom-32 rotate-[-45deg]"></div>
@@ -493,9 +472,6 @@ export function BonusGame() {
   );
 }
 
-// ============================================================
-// INVEST PAGE (Strict VIP)
-// ============================================================
 export function Invest() {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(null);
