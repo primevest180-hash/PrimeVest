@@ -8,7 +8,7 @@ import {
   Settings as SettingsIcon, LogOut, X, Info, ArrowLeft, CreditCard, LockKeyhole, AlertCircle,
   Building2, Bitcoin, PiggyBank, BarChart3, PieChart, Search, XCircle, Loader2, ThumbsUp,
   Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
-  Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle
+  Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
 } from "lucide-react";
 import Terms from "./terms";
 import { 
@@ -48,7 +48,9 @@ async function notifyAdmin(name, email) {
 
 export const api = {
   signup: async (name, email, password, ref) => {
-    const res = await supabase.auth.signUp({ email, password, options: { data: { name, ref } } });
+    const res = await supabase.auth.signUp({ 
+      email, password, options: { data: { name, ref } } 
+    });
     if (!res.error) notifyAdmin(name, email);
     return res;
   },
@@ -86,7 +88,21 @@ export const api = {
     return fetch(`${FN}/index/banks`, { headers: { "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY, "Authorization": `Bearer ${session?.access_token || ""}` } }).then(r => r.json());
   },
   resolveAccount: (account_number, bank_code) => call("index/resolve-account", { account_number, bank_code }),
-  withdraw: (p) => call("index/withdraw-request", p),
+  
+  withdraw: async (p) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    // Deduct immediately to prevent double spending
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
+    await supabase.from("wallets").update({ 
+      available: (wallet?.available || 0) - p.amount, 
+      total: (wallet?.total || 0) - p.amount 
+    }).eq("user_id", user.id);
+    
+    const r = await call("index/withdraw-request", p);
+    
+    await supabase.from("transactions").insert({ user_id: user.id, type: "withdraw", amount: p.amount, status: "pending", reference: `WD-${Date.now()}` });
+    return r;
+  },
   
   claimBonus: async (amount) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -112,6 +128,7 @@ export const api = {
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
     if (profile?.last_login_claim && (now - new Date(profile.last_login_claim)) / 1000 < 86400) return { error: "Already claimed" };
+    
     await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
@@ -122,14 +139,21 @@ export const api = {
 
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
+    const { data: referrals } = await supabase.from("profiles").select("*").eq("referred_by", user.id);
+    if (!referrals || referrals.length === 0) return { error: "No one has used your link yet." };
+
     const { data: profile } = await supabase.from("profiles").select("referral_earnings").eq("id", user.id).single();
-    const amount = (profile?.referral_earnings || 0) > 0 ? 200 : 1000;
-    await supabase.from("profiles").update({ referral_earnings: (profile?.referral_earnings || 0) + amount }).eq("id", user.id);
+    const expectedEarnings = referrals.length * 1000; 
+    const currentEarnings = profile?.referral_earnings || 0;
+    if (currentEarnings >= expectedEarnings) return { error: "You have already been rewarded for your referrals." };
+
+    const amountToPay = expectedEarnings - currentEarnings;
+    await supabase.from("profiles").update({ referral_earnings: expectedEarnings }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount, status: "success", reference: `REF-${Date.now()}` });
-    await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amount} for sharing your link!`, type: "referral" });
-    return { amount };
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amountToPay, total: (wallet?.total || 0) + amountToPay }).eq("user_id", user.id);
+    await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount: amountToPay, status: "success", reference: `REF-${Date.now()}` });
+    await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amountToPay} for your referrals!`, type: "referral" });
+    return { amount: amountToPay };
   },
 
   upgradeVIP: async (tier, cost) => {
@@ -173,7 +197,7 @@ export const api = {
 };
 
 // ============================================================
-// BRANDED LOADING SCREEN
+// BRANDED LOADING & TOAST
 // ============================================================
 function LoadingScreen() {
   return (
@@ -190,20 +214,14 @@ function LoadingScreen() {
   );
 }
 
-// ============================================================
-// GLOBAL TOAST
-// ============================================================
 const Toast = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 4000);
     return () => clearTimeout(timer);
   }, [onClose]);
-
   return (
-    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] rounded-2xl border border-emerald-500/30 bg-[#0D1526] px-6 py-4 shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
-        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-      </div>
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] rounded-2xl border border-emerald-500/30 bg-[#0D1526] px-6 py-4 shadow-2xl backdrop-blur-xl flex items-center gap-3">
+      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
       <p className="text-sm font-semibold text-white">{message}</p>
     </div>
   );
@@ -382,9 +400,6 @@ function Testimonials() {
   );
 }
 
-// ============================================================
-// UPDATED LANDING PAGE (Redirects logged-in users)
-// ============================================================
 function LandingPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -569,7 +584,7 @@ function Signup() {
 }
 
 // ============================================================
-// HOME PAGE (Active Dashboard)
+// HOME PAGE (GOLD VIP, FIXED CRASHES)
 // ============================================================
 function HomePage() {
   const navigate = useNavigate();
@@ -583,19 +598,18 @@ function HomePage() {
   const [showSupport, setShowSupport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
-  
-  // TOAST STATE ADDED HERE
   const [toastMsg, setToastMsg] = useState("");
-
+  const [shareMessage, setShareMessage] = useState("");
   const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [shareMessage, setShareMessage] = useState("");
 
   const [messages, setMessages] = useState([
     { id: 1, user: "PrimeVest Bot", text: "Welcome to the Global Chat! 🚀", time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) },
     { id: 2, user: "Chinedu O.", text: "Just claimed my daily ₦300! PrimeVest is paying 🔥", time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) },
   ]);
   const [newMsg, setNewMsg] = useState("");
+
+  const isVip = profile.vip_tier && profile.vip_tier !== "None";
 
   const formatMoney = (amount) => {
     if (!amount) return isUsd ? "$0.00" : "₦0.00";
@@ -604,8 +618,27 @@ function HomePage() {
   };
 
   const loadData = useCallback(async () => {
-    const [w, p, i, n] = await Promise.all([api.wallet(), api.profile(), api.portfolio(), api.notifications()]);
-    if (w.data) setWallet(w.data);
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    let { data: w, error } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
+    if (error || !w) {
+      await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
+      const retry = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
+      w = retry.data;
+    }
+
+    const pendingTier = localStorage.getItem('pending_vip_tier');
+    const pendingPrice = localStorage.getItem('pending_vip_price');
+    if (pendingTier && pendingPrice) {
+      await api.upgradeVIP(pendingTier, Number(pendingPrice));
+      localStorage.removeItem('pending_vip_tier');
+      localStorage.removeItem('pending_vip_price');
+      setToastMsg(`Success! You are now ${pendingTier}. Bonus added to wallet.`);
+      w = (await supabase.from("wallets").select("*").eq("user_id", user.id).single()).data;
+    }
+
+    const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
+    if (w) setWallet(w);
     if (p.data) setProfile(p.data);
     if (i.data) setInvestments(i.data);
     if (n.data) setNotifications(n.data);
@@ -645,8 +678,7 @@ function HomePage() {
     if (!canClaimDaily) return;
     const r = await api.claimDailyLogin();
     if (r.error) return alert("You can only claim once every 24 hours.");
-    
-    setToastMsg("You have claimed your bonus of ₦100! It will reflect on your dashboard.");
+    setToastMsg("You have claimed your bonus of ₦100!");
     loadData();
   }
 
@@ -656,10 +688,12 @@ function HomePage() {
     setCopied(true);
     const res = await api.rewardReferral();
     if (res.amount) {
-      setShareMessage(`Link copied! You earned ₦${res.amount.toLocaleString()} for sharing.`);
+      setShareMessage(`Success! You earned ₦${res.amount.toLocaleString()} for your referrals.`);
       loadData();
+    } else if (res.error) {
+      setShareMessage(res.error);
     }
-    setTimeout(() => { setCopied(false); setShareMessage(""); }, 4000);
+    setTimeout(() => { setCopied(false); }, 3000);
   }
 
   function sendMessage(e) {
@@ -672,9 +706,7 @@ function HomePage() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen bg-[#070D1A] pb-28 text-white relative">
-      
-      {/* ADDED TOAST HERE */}
+    <div className={`min-h-screen pb-28 text-white relative transition-colors duration-500 ${isVip ? 'bg-[#140F00]' : 'bg-[#070D1A]'}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
       <button onClick={() => setShowSupport(true)} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl shadow-blue-900/50 hover:bg-blue-500 transition">
@@ -695,19 +727,26 @@ function HomePage() {
         </div>
       )}
 
-      <header className="sticky top-0 z-40 border-b border-white/6 bg-[#070D1A]/95 backdrop-blur-xl">
+      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl transition-colors duration-500 ${isVip ? 'border-amber-500/20 bg-[#140F00]/95' : 'border-white/6 bg-[#070D1A]/95'}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <h1 className="text-xl font-bold">Prime<span className="text-blue-400">Vest</span></h1>
+          <h1 className="text-xl font-bold">Prime<span className={isVip ? "text-amber-400" : "text-blue-400"}>Vest</span></h1>
           <div className="flex items-center gap-2">
             <button onClick={() => setIsUsd(!isUsd)} className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold hover:bg-white/10">
-              <Globe2 size={14} className="text-blue-400" /> {isUsd ? "USD" : "NGN"}
+              <Globe2 size={14} className={isVip ? "text-amber-400" : "text-blue-400"} /> {isUsd ? "USD" : "NGN"}
             </button>
             <button onClick={() => setShowNotifs(!showNotifs)} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition">
               <Bell size={18} />
               {notifications.filter(n => !n.read).length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{notifications.filter(n => !n.read).length}</span>}
             </button>
-            <div className="h-8 w-8 rounded-full border border-blue-400/30 overflow-hidden flex items-center justify-center bg-blue-500/20 ml-2">
-              {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User size={16} className="text-blue-300" />}
+            <div className={`relative h-10 w-10 rounded-full border overflow-hidden flex items-center justify-center ml-2 ${isVip ? 'border-amber-400/50 bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'border-blue-400/30 bg-blue-500/20'}`}>
+              {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User size={16} className={isVip ? "text-amber-300" : "text-blue-300"} />}
+              
+              {/* VIP CROWN ON PROFILE */}
+              {isVip && (
+                <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 shadow-sm">
+                  <Crown size={12} className="text-black" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -744,28 +783,46 @@ function HomePage() {
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
-          <div className="rounded-2xl border border-blue-400/20 bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-6">
+          
+          {/* MAIN BALANCE CARD - CHANGES TO GOLD IF VIP */}
+          <div className={`rounded-2xl border p-6 transition-all duration-500 ${
+            isVip 
+              ? 'border-amber-400/30 bg-gradient-to-br from-[#2A1D00] via-[#5C4300] to-[#8A6600] shadow-[0_0_30px_rgba(245,158,11,0.15)]' 
+              : 'border-blue-400/20 bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600'
+          }`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-blue-100"><Wallet size={19} />Total Balance</div>
+              <div className={`flex items-center gap-2 text-sm ${isVip ? 'text-amber-100' : 'text-blue-100'}`}>
+                <Wallet size={19} />Total Balance
+                {isVip && <Crown size={16} className="text-amber-400" />}
+              </div>
               <button onClick={() => setBalanceVisible(!balanceVisible)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition">
                 {balanceVisible ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
             </div>
-            <h3 className="mt-6 text-3xl font-bold sm:text-4xl">{balanceVisible ? formatMoney(wallet.total + liveAccrual) : (isUsd ? "$ ••••" : "₦ ••••")}</h3>
-            <p className="mt-3 text-sm text-blue-100/80">Available: {balanceVisible ? formatMoney(wallet.available) : (isUsd ? "$ •••" : "₦ •••")}</p>
+            <h3 className={`mt-6 text-3xl font-bold sm:text-4xl ${isVip ? 'text-amber-50' : 'text-white'}`}>
+              {balanceVisible ? formatMoney(wallet.total + liveAccrual) : (isUsd ? "$ ••••" : "₦ ••••")}
+            </h3>
+            <p className={`mt-3 text-sm ${isVip ? 'text-amber-200/80' : 'text-blue-100/80'}`}>
+              Available: {balanceVisible ? formatMoney(wallet.available) : (isUsd ? "$ •••" : "₦ •••")}
+            </p>
             <div className="mt-8 grid grid-cols-2 gap-3">
-              <a href="/deposit" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-blue-900"><ArrowDownToLine size={18} />Deposit</a>
-              <a href="/withdraw" className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm font-semibold"><ArrowUpFromLine size={18} />Withdraw</a>
+              <a href="/deposit" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? 'bg-amber-100 text-amber-950 hover:bg-white' : 'bg-white text-blue-900 hover:bg-blue-50'}`}><ArrowDownToLine size={18} />Deposit</a>
+              <a href="/withdraw" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${isVip ? 'border-amber-400/30 bg-amber-500/20 text-amber-50 hover:bg-amber-500/30' : 'border-white/30 bg-white/10 hover:bg-white/20'}`}><ArrowUpFromLine size={18} />Withdraw</a>
             </div>
           </div>
+          
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className="rounded-2xl border border-white/8 bg-[#0D1526] p-5">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10"><TrendingUp size={22} className="text-blue-400" /></div>
+            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10' : 'border-white/8'}`}>
+              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isVip ? 'bg-amber-500/10' : 'bg-blue-500/10'}`}>
+                <TrendingUp size={22} className={isVip ? 'text-amber-400' : 'text-blue-400'} />
+              </div>
               <p className="mt-5 text-sm text-slate-400">Invested</p>
               <h3 className="mt-2 text-2xl font-bold">{balanceVisible ? formatMoney(wallet.invested) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
-            <div className="rounded-2xl border border-white/8 bg-[#0D1526] p-5">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10"><CircleDollarSign size={22} className="text-emerald-400" /></div>
+            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10' : 'border-white/8'}`}>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
+                <CircleDollarSign size={22} className="text-emerald-400" />
+              </div>
               <p className="mt-5 text-sm text-slate-400">Earnings {affiliateInv && <span className="text-emerald-400 text-xs ml-2 animate-pulse">● Live</span>}</p>
               <h3 className="mt-2 text-2xl font-bold text-emerald-400">{balanceVisible ? formatMoney(wallet.earnings + liveAccrual) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
@@ -775,7 +832,10 @@ function HomePage() {
         <section className="mt-9">
           <h3 className="mb-5 text-lg font-semibold">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <a href="/deposit" className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-blue-500/40"><Wallet size={23} className="text-blue-400 mb-2" /><h4 className="font-semibold">Deposit</h4></a>
+            <a href="/deposit" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-blue-500/40'}`}>
+              <Wallet size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-blue-400'}`} />
+              <h4 className="font-semibold">Deposit</h4>
+            </a>
             
             {profile.vip_tier === "None" ? (
               <a href="/vip" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 hover:border-red-500/40">
@@ -783,28 +843,37 @@ function HomePage() {
                 <h4 className="font-semibold">Invest (Locked)</h4>
               </a>
             ) : (
-              <a href="/invest" className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 hover:border-emerald-500/40">
-                <Unlock size={23} className="text-emerald-400 mb-2" />
+              <a href="/invest" className={`rounded-2xl border p-5 ${isVip ? 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60' : 'border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40'}`}>
+                <Unlock size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
                 <h4 className="font-semibold">Invest (Active)</h4>
               </a>
             )}
 
-            <a href="/bonus" className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-emerald-500/40"><Gamepad2 size={23} className="text-emerald-400 mb-2" /><h4 className="font-semibold">Bonus Game</h4></a>
-            <button onClick={() => setShowReferral(true)} className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 text-left hover:border-emerald-500/40"><Users size={23} className="text-emerald-400 mb-2" /><h4 className="font-semibold">Refer & Earn</h4></button>
+            <a href="/bonus" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-emerald-500/40'}`}>
+              <Gamepad2 size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
+              <h4 className="font-semibold">Bonus Game</h4>
+            </a>
+            <button onClick={() => setShowReferral(true)} className={`rounded-2xl border bg-[#0D1526] p-5 text-left ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-emerald-500/40'}`}>
+              <Users size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
+              <h4 className="font-semibold">Refer & Earn</h4>
+            </button>
           </div>
         </section>
 
         <section className="mt-9">
-          <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-6">
-            <div className="flex items-center gap-3 mb-4"><MessageSquare className="h-6 w-6 text-blue-400" /><h3 className="text-lg font-bold">Global Chat</h3></div>
+          <div className={`rounded-2xl border bg-[#0D1526] p-6 ${isVip ? 'border-amber-500/10' : 'border-white/10'}`}>
+            <div className="flex items-center gap-3 mb-4">
+              <MessageSquare className={`h-6 w-6 ${isVip ? 'text-amber-400' : 'text-blue-400'}`} />
+              <h3 className="text-lg font-bold">Global Chat</h3>
+            </div>
             <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
               {messages.map(m => (
                 <div key={m.id} className={`flex gap-3 text-sm ${m.user === profile.name ? 'justify-end' : 'justify-start'}`}>
                   {m.user !== profile.name && (
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400 font-bold">{m.user[0]}</div>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold ${isVip ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>{m.user[0]}</div>
                   )}
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${m.user === profile.name ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
-                    {m.user !== profile.name && <p className="text-xs font-bold text-blue-400 mb-1">{m.user}</p>}
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${m.user === profile.name ? (isVip ? 'bg-amber-600 text-white rounded-tr-sm' : 'bg-blue-600 text-white rounded-tr-sm') : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
+                    {m.user !== profile.name && <p className={`text-xs font-bold mb-1 ${isVip ? 'text-amber-400' : 'text-blue-400'}`}>{m.user}</p>}
                     <p>{m.text}</p>
                     <p className="text-[10px] text-right mt-1 opacity-70">{m.time}</p>
                   </div>
@@ -813,7 +882,7 @@ function HomePage() {
             </div>
             <form onSubmit={sendMessage} className="mt-4 flex gap-2">
               <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Type a message..." className="flex-1 rounded-xl bg-slate-950 px-4 py-3 text-sm outline-none" />
-              <button type="submit" className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold"><Send size={18} /></button>
+              <button type="submit" className={`rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}><Send size={18} /></button>
             </form>
           </div>
         </section>
@@ -829,28 +898,36 @@ function HomePage() {
               </div>
               <button onClick={() => setShowReferral(false)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><X size={20} /></button>
             </div>
-            {shareMessage ? (
-              <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center"><p className="font-bold text-emerald-400">{shareMessage}</p></div>
-            ) : (
-              <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/6 p-5">
-                <p className="text-sm text-emerald-200">Reward for sharing your link</p>
-                <p className="mt-2 text-3xl font-bold text-emerald-300">{formatMoney(1000)} <span className="text-sm font-normal text-emerald-500/70">(First time)</span></p>
-                <p className="mt-1 text-sm font-bold text-emerald-300">{formatMoney(200)} <span className="text-xs font-normal text-emerald-500/70">(Subsequent shares)</span></p>
+            
+            <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/6 p-5">
+              <p className="text-sm text-emerald-200">Reward for sharing your link</p>
+              <p className="mt-2 text-3xl font-bold text-emerald-300">{formatMoney(1000)} <span className="text-sm font-normal text-emerald-500/70">(Per person)</span></p>
+            </div>
+
+            {shareMessage && (
+              <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+                <p className="font-bold text-emerald-400 text-sm">{shareMessage}</p>
               </div>
             )}
+
             <div className="mt-6">
               <input readOnly value={`${window.location.origin}/signup?ref=${profile.referral_code || ""}`} onFocus={(e) => e.target.select()} className="w-full rounded-xl border border-white/10 bg-[#070D1A] px-4 py-3 text-sm" />
-              <button onClick={handleShare} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-semibold hover:bg-blue-500 transition">
-                {copied ? <Check size={18} /> : <Copy size={18} />}{copied ? "Link Copied!" : "Share & Copy Link"}
-              </button>
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/signup?ref=${profile.referral_code || ""}`); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 py-3 font-semibold hover:bg-slate-700 transition">
+                  {copied ? <Check size={18} /> : <Copy size={18} />}{copied ? "Copied!" : "Copy Link"}
+                </button>
+                <button onClick={handleShare} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold hover:bg-emerald-500 transition">
+                  <RefreshCw size={18} /> Check Rewards
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/[0.07] bg-[#070D1A]/95 px-2 py-2 backdrop-blur-xl">
+      <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t px-2 py-2 backdrop-blur-xl transition-colors duration-500 ${isVip ? 'border-amber-500/20 bg-[#140F00]/95' : 'border-white/[0.07] bg-[#070D1A]/95'}`}>
         <div className="mx-auto grid max-w-lg grid-cols-6">
-          <a href="/home" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl bg-blue-500/10 text-xs font-semibold text-blue-400"><HomeIcon size={20} />Home</a>
+          <a href="/home" className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${isVip ? 'bg-amber-500/10 text-amber-400' : 'bg-blue-500/10 text-blue-400'}`}><HomeIcon size={20} />Home</a>
           <a href="/invest" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><TrendingUp size={20} />Invest</a>
           <a href="/vip" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Crown size={20} />VIP</a>
           <a href="/bonus" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Gamepad2 size={20} />Bonus</a>
