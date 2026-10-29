@@ -72,7 +72,6 @@ export function DepositPayment() {
       <main className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6"><p className="text-sm text-blue-200">Amount</p><h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2></div>
         <div className="mt-6 space-y-4">
-          {/* REMOVED BANK TRANSFER HERE */}
           <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-blue-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Card (Paystack)</h3></div></a>
           <a href={`/deposit/bitcoin?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-amber-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10"><Bitcoin className="h-7 w-7 text-amber-400" /></div><div><h3 className="font-semibold">Bitcoin</h3></div></a>
         </div>
@@ -624,9 +623,6 @@ export function Invest() {
   );
 }
 
-// ============================================================
-// PORTFOLIO (With Investment Toast)
-// ============================================================
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
   const [history, setHistory] = useState([]);
