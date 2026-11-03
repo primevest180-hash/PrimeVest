@@ -24,6 +24,9 @@ export const Toast = ({ message, onClose }) => {
   );
 };
 
+// ============================================================
+// DEPOSIT PAGES
+// ============================================================
 export function Deposit() {
   const [amount, setAmount] = useState("");
   const [region, setRegion] = useState("Nigeria");
@@ -66,7 +69,7 @@ export function DepositPayment() {
       <main className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6"><p className="text-sm text-blue-200">Amount</p><h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2></div>
         <div className="mt-6 space-y-4">
-          <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-blue-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Card (Paystack)</h3></div></a>
+          <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-blue-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div><div><h3 className="font-semibold">Card / Transfer (Paystack)</h3></div></a>
           <a href={`/deposit/bitcoin?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-amber-500"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10"><Bitcoin className="h-7 w-7 text-amber-400" /></div><div><h3 className="font-semibold">Bitcoin</h3></div></a>
         </div>
       </main>
@@ -91,10 +94,12 @@ export function DepositCard() {
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
       <header className="border-b border-white/5 bg-[#070D1A]/95"><div className="mx-auto flex h-20 max-w-5xl items-center gap-4 px-5"><a href={`/deposit/payment?amount=${amount}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><ArrowLeft size={19} /></a><h1 className="text-lg font-semibold">Card Payment</h1></div></header>
-      <main className="mx-auto max-w-xl px-5 py-10">
-        <div className="rounded-2xl border border-white/8 bg-[#0D1526] p-6">
+      
+      {/* CENTERED BUTTON */}
+      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-5">
+        <div className="w-full max-w-xl rounded-2xl border border-white/8 bg-[#0D1526] p-6">
           {error && <div className="mt-4 rounded-xl bg-red-500/5 p-4 text-sm text-red-300">{error}</div>}
-          <button onClick={pay} disabled={loading} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold disabled:opacity-60"><LockKeyhole size={17} />{loading ? "Redirecting..." : `Pay ₦${fmt}`}</button>
+          <button onClick={pay} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold disabled:opacity-60"><LockKeyhole size={17} />{loading ? "Redirecting..." : `Pay ₦${fmt}`}</button>
         </div>
       </main>
     </div>
@@ -134,6 +139,9 @@ export function DepositBitcoin() {
   );
 }
 
+// ============================================================
+// WITHDRAW PAGES
+// ============================================================
 export function Withdraw() {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
@@ -271,6 +279,9 @@ export function WithdrawSuccess() {
   );
 }
 
+// ============================================================
+// VIP & VIP CHECKOUT
+// ============================================================
 export function VIP() {
   const navigate = useNavigate();
   return (
@@ -377,6 +388,9 @@ export function VIPCheckout() {
   );
 }
 
+// ============================================================
+// BONUS GAME (FIXED SPEEDOMETER & TOASTS)
+// ============================================================
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
@@ -472,6 +486,9 @@ export function BonusGame() {
   );
 }
 
+// ============================================================
+// INVEST PAGE (Strict VIP)
+// ============================================================
 export function Invest() {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(null);
