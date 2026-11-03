@@ -131,7 +131,6 @@ export const api = {
 
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    
     const { data: profile } = await supabase.from("profiles").select("referral_code, referral_earnings").eq("id", user.id).single();
     if (!profile?.referral_code) return { error: "You don't have a referral code." };
 
@@ -609,8 +608,6 @@ function HomePage() {
       const retry = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       w = retry.data;
     }
-
-    // VIP localStorage check REMOVED to prevent free money
 
     const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
     if (w) setWallet(w);
