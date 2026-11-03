@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
+// ============================================================
+// GLOBAL TOAST (FLOATING NOTIFICATION)
+// ============================================================
 export const Toast = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 4000);
@@ -83,14 +86,23 @@ export function DepositCard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
+  
   async function pay() {
     setLoading(true); setError("");
     const { data: { user } } = await supabase.auth.getUser();
     const r = await api.depositInit(amount, "card", user.email);
     setLoading(false);
-    if (r?.url) window.location.href = r.url;
-    else setError(r?.error || "Failed.");
+    
+    // FIXED: Check for Paystack's authorization_url
+    if (r?.authorization_url) {
+      window.location.href = r.authorization_url;
+    } else if (r?.url) {
+      window.location.href = r.url;
+    } else {
+      setError(r?.error || "Failed to initialize payment.");
+    }
   }
+  
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
       <header className="border-b border-white/5 bg-[#070D1A]/95"><div className="mx-auto flex h-20 max-w-5xl items-center gap-4 px-5"><a href={`/deposit/payment?amount=${amount}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><ArrowLeft size={19} /></a><h1 className="text-lg font-semibold">Card Payment</h1></div></header>
@@ -344,7 +356,11 @@ export function VIPCheckout() {
     const { data: { user } } = await supabase.auth.getUser();
     const r = await api.depositInit(price, "card", user.email, true);
     setLoading(false);
-    if (r?.url) {
+    if (r?.authorization_url) {
+       localStorage.setItem('pending_vip_tier', tier);
+       localStorage.setItem('pending_vip_price', price);
+       window.location.href = r.authorization_url;
+    } else if (r?.url) {
        localStorage.setItem('pending_vip_tier', tier);
        localStorage.setItem('pending_vip_price', price);
        window.location.href = r.url;
