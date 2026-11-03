@@ -132,35 +132,21 @@ export const api = {
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     
-    // 1. Get the user's own referral code
     const { data: profile } = await supabase.from("profiles").select("referral_code, referral_earnings").eq("id", user.id).single();
-    
     if (!profile?.referral_code) return { error: "You don't have a referral code." };
 
-    // 2. Check how many people signed up with THAT code
     const { data: referrals } = await supabase.from("profiles").select("id").eq("referred_by", profile.referral_code);
-    
-    if (!referrals || referrals.length === 0) {
-      return { error: "No one has used your link yet." };
-    }
+    if (!referrals || referrals.length === 0) return { error: "No one has used your link yet." };
 
-    // 3. Calculate earnings
     const expectedEarnings = referrals.length * 1000; 
     const currentEarnings = profile?.referral_earnings || 0;
-    
-    if (currentEarnings >= expectedEarnings) {
-      return { error: "You have already been rewarded for all your referrals." };
-    }
+    if (currentEarnings >= expectedEarnings) return { error: "You have already been rewarded for all your referrals." };
 
     const amountToPay = expectedEarnings - currentEarnings;
 
-    // 4. Pay the user
     await supabase.from("profiles").update({ referral_earnings: expectedEarnings }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ 
-      available: (wallet?.available || 0) + amountToPay, 
-      total: (wallet?.total || 0) + amountToPay 
-    }).eq("user_id", user.id);
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amountToPay, total: (wallet?.total || 0) + amountToPay }).eq("user_id", user.id);
     
     await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount: amountToPay, status: "success", reference: `REF-${Date.now()}` });
     await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amountToPay} for your referrals!`, type: "referral" });
@@ -624,15 +610,7 @@ function HomePage() {
       w = retry.data;
     }
 
-    const pendingTier = localStorage.getItem('pending_vip_tier');
-    const pendingPrice = localStorage.getItem('pending_vip_price');
-    if (pendingTier && pendingPrice) {
-      await api.upgradeVIP(pendingTier, Number(pendingPrice));
-      localStorage.removeItem('pending_vip_tier');
-      localStorage.removeItem('pending_vip_price');
-      setToastMsg(`Success! You are now ${pendingTier}. Bonus added to wallet.`);
-      w = (await supabase.from("wallets").select("*").eq("user_id", user.id).single()).data;
-    }
+    // VIP localStorage check REMOVED to prevent free money
 
     const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
     if (w) setWallet(w);
