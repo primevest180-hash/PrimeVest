@@ -77,7 +77,7 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     return supabase.from("transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
   },
-  depositInit: (amount, method, email, vip) => call("index", { amount, method, email, vip }),
+  depositInit: (amount, method, email, vip) => call("index", { amount, email }),
   banks: async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return fetch(`${FN}/index/banks`, { headers: { "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY, "Authorization": `Bearer ${session?.access_token || ""}` } }).then(r => r.json());
