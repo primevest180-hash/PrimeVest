@@ -34,19 +34,29 @@ async function call(path, body) {
   return res.json();
 }
 
-async function notifyAdmin(name, email) {
+async function notifyAdmin(name, email, type = "New Signup") {
   try {
     await fetch("https://api.web3forms.com/submit", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ access_key: import.meta.env.VITE_WEB3FORMS_KEY, subject: "New PrimeVest Signup", from_name: "PrimeVest", name, email, message: `New user:\nName: ${name}\nEmail: ${email}` }),
+      method: "POST", 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        access_key: import.meta.env.VITE_WEB3FORMS_KEY, 
+        subject: `PrimeVest: ${type}`, 
+        from_name: "PrimeVest", 
+        name, 
+        email, 
+        message: `User Action:\nType: ${type}\nName: ${name}\nEmail: ${email}` 
+      }),
     });
-  } catch {}
+  } catch (err) {
+    console.error("Email failed to send", err);
+  }
 }
 
 export const api = {
   signup: async (name, email, password, ref) => {
     const res = await supabase.auth.signUp({ email, password, options: { data: { name, ref } } });
-    if (!res.error) notifyAdmin(name, email);
+    if (!res.error) notifyAdmin(name, email, "New User Signup");
     return res;
   },
   login: (email, password) => supabase.auth.signInWithPassword({ email, password }),
@@ -132,30 +142,20 @@ export const api = {
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("referral_code, referral_earnings").eq("id", user.id).single();
-    
     if (!profile?.referral_code) return { error: "You don't have a referral code." };
 
     const { data: referrals } = await supabase.from("profiles").select("id").eq("referred_by", profile.referral_code);
-    
-    if (!referrals || referrals.length === 0) {
-      return { error: "No one has used your link yet." };
-    }
+    if (!referrals || referrals.length === 0) return { error: "No one has used your link yet." };
 
     const expectedEarnings = referrals.length * 1000; 
     const currentEarnings = profile?.referral_earnings || 0;
-    
-    if (currentEarnings >= expectedEarnings) {
-      return { error: "You have already claimed all your referral rewards." };
-    }
+    if (currentEarnings >= expectedEarnings) return { error: "You have already been rewarded for all your referrals." };
 
     const amountToPay = expectedEarnings - currentEarnings;
 
     await supabase.from("profiles").update({ referral_earnings: expectedEarnings }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ 
-      available: (wallet?.available || 0) + amountToPay, 
-      total: (wallet?.total || 0) + amountToPay 
-    }).eq("user_id", user.id);
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amountToPay, total: (wallet?.total || 0) + amountToPay }).eq("user_id", user.id);
     
     await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount: amountToPay, status: "success", reference: `REF-${Date.now()}` });
     await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amountToPay} for your referrals!`, type: "referral" });
@@ -171,6 +171,9 @@ export const api = {
     const bonus = tier === "VIP 1" ? 5000 : tier === "VIP 2" ? 10000 : 17000;
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus, total: (wallet?.total || 0) + bonus }).eq("user_id", user.id);
     await supabase.from("notifications").insert({ user_id: user.id, title: "VIP Upgraded", message: `You are now a ${tier}. ₦${bonus} investment bonus added to your wallet.`, type: "system" });
+    
+    notifyAdmin(user.email, user.email, `VIP Subscription Purchased (${tier})`); 
+    
     return { success: true };
   },
   
@@ -594,7 +597,6 @@ function HomePage() {
   const [shareMessage, setShareMessage] = useState("");
   const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [referralCount, setReferralCount] = useState(0);
 
   const [messages, setMessages] = useState([
     { id: 1, user: "PrimeVest Bot", text: "Welcome to the Global Chat! 🚀", time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) },
@@ -622,12 +624,7 @@ function HomePage() {
 
     const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
     if (w) setWallet(w);
-    if (p.data) {
-      setProfile(p.data);
-      // Fetch referral count
-      const { data: refs } = await supabase.from("profiles").select("id").eq("referred_by", p.data.referral_code);
-      setReferralCount(refs?.length || 0);
-    }
+    if (p.data) setProfile(p.data);
     if (i.data) setInvestments(i.data);
     if (n.data) setNotifications(n.data);
     setLoading(false);
@@ -884,13 +881,6 @@ function HomePage() {
               </div>
               <button onClick={() => setShowReferral(false)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><X size={20} /></button>
             </div>
-
-            {referralCount > (profile.referral_earnings / 1000) && (
-              <div className="mt-6 rounded-xl border border-blue-500/50 bg-blue-500/10 p-5 shadow-[0_0_20px_rgba(59,130,246,0.4)] animate-pulse">
-                <p className="text-sm font-bold text-blue-200">Rewards Available!</p>
-                <p className="mt-1 text-xs text-blue-300">You have new referrals. Click "Check Rewards" below to claim your ₦{(referralCount * 1000).toLocaleString()}!</p>
-              </div>
-            )}
             
             <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/6 p-5">
               <p className="text-sm text-emerald-200">Reward for sharing your link</p>
