@@ -74,8 +74,10 @@ async function sendWithdrawalEmail(user, p) {
 
 export const api = {
   signup: async (name, email, password, ref) => {
-    const res = await supabase.auth.signUp({ email, password, options: { data: { name, ref } } });
-    if (!res.error) notifyAdmin(name, email, "New User Signup");
+    // Auto-generate name from email if not provided (e.g. john@gmail.com -> John)
+    const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
+    const res = await supabase.auth.signUp({ email, password, options: { data: { name: finalName, ref } } });
+    if (!res.error) notifyAdmin(finalName, email, "New User Signup");
     return res;
   },
   login: (email, password) => supabase.auth.signInWithPassword({ email, password }),
@@ -160,7 +162,6 @@ export const api = {
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
     
-    // Strict 24 hour check
     if (profile?.last_login_claim && (now.getTime() - new Date(profile.last_login_claim).getTime()) < 86400000) {
       return { error: "Already claimed" };
     }
@@ -216,6 +217,7 @@ export const api = {
   getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
   
   approveWithdrawal: async (withdrawalId, user_id, amount) => {
+    // Deduct real money from wallet on approval
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
     await supabase.from("wallets").update({ 
       available: (wallet?.available || 0) - amount, 
@@ -658,7 +660,6 @@ function HomePage() {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // Strict 24 hour timer calculation for ₦100 claim
   useEffect(() => {
     if (!profile.last_login_claim) { setTimeLeft(""); return; }
     const tick = () => {
@@ -688,7 +689,9 @@ function HomePage() {
     return () => clearInterval(chatTimer);
   }, []);
 
-  // Live accrual calculation for all investments
+  // CALCULATE INVESTED DIRECTLY FROM PORTFOLIO (Fixes dashboard wipe)
+  const actualInvested = investments.filter(i => i.status === "active").reduce((sum, inv) => sum + Number(inv.amount), 0);
+
   let liveAccrual = 0;
   investments.forEach(inv => {
     if (inv.status === "active") {
@@ -833,7 +836,7 @@ function HomePage() {
                 <TrendingUp size={22} className={isVip ? "text-amber-400" : "text-blue-400"} />
               </div>
               <p className="mt-5 text-sm text-slate-400">Invested</p>
-              <h3 className="mt-2 text-2xl font-bold">{balanceVisible ? formatMoney(wallet.invested) : (isUsd ? "$ •••" : "₦ •••")}</h3>
+              <h3 className="mt-2 text-2xl font-bold">{balanceVisible ? formatMoney(actualInvested) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
             <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10" : "border-white/8"}`}>
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">

@@ -324,7 +324,6 @@ export function WithdrawSuccess() {
   const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
   const [timeLeft, setTimeLeft] = useState("36h 0m 0s");
 
-  // Live 36hr countdown
   useEffect(() => {
     const endTime = Date.now() + 36 * 60 * 60 * 1000;
     const tick = () => {
@@ -520,19 +519,23 @@ export function BonusGame() {
   const rotation = -85 + speedPercentage * 170;
 
   const getSpeedReaction = () => {
-    if (clickSpeed >= 8) return <span className="text-2xl font-bold text-emerald-400 animate-pulse">Congrats! 🎉</span>;
-    if (clickSpeed === 7) return <span className="text-3xl font-black text-amber-400">U can do better!</span>;
-    if (clickSpeed === 6) return <span className="text-6xl animate-bounce">🤣</span>;
-    if (clickSpeed === 5) return <span className="text-5xl absolute animate-ping">💨💨</span>;
-    if (clickSpeed === 4) return <span className="text-5xl absolute animate-pulse">💨</span>;
-    if (clickSpeed === 3) return <span className="text-5xl">😮</span>;
-    if (clickSpeed >= 1) return <span className="text-5xl animate-bounce">😂</span>;
+    if (clickSpeed >= 8) return <span className="text-6xl font-bold text-emerald-400 animate-bounce drop-shadow-[0_0_15px_rgba(52,211,153,0.8)] absolute top-10 left-10">🎉</span>;
+    if (clickSpeed === 7) return <span className="text-5xl font-black text-amber-400 absolute top-20 right-10">U can do better!</span>;
+    if (clickSpeed === 6) return <><span className="text-7xl absolute top-1/4 left-1/4 animate-bounce">🤣</span><span className="text-7xl absolute bottom-1/4 right-1/4 animate-bounce">🤣</span></>;
+    if (clickSpeed === 5) return <><span className="text-6xl absolute top-10 right-10 animate-ping">💨</span><span className="text-6xl absolute bottom-20 left-10 animate-ping">💨</span></>;
+    if (clickSpeed === 4) return <span className="text-6xl absolute top-20 left-20 animate-pulse">💨</span>;
+    if (clickSpeed === 3) return <span className="text-6xl absolute top-10 left-10">😮</span>;
+    if (clickSpeed >= 1) return <><span className="text-6xl absolute top-10 left-10 animate-bounce">😂</span><span className="text-6xl absolute bottom-20 right-10 animate-bounce">😂</span></>;
     return null;
   };
 
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+
+      <div className="absolute inset-0 pointer-events-none z-50">
+        {getSpeedReaction()}
+      </div>
 
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
       <p className="text-sm text-slate-400 mb-6 text-center px-4">2 points = ₦1</p>
@@ -557,15 +560,12 @@ export function BonusGame() {
         <p className="mt-2 text-sm text-emerald-400">Value: ₦{moneyValue.toLocaleString()}</p>
       </div>
 
-      <button onClick={handleTap} className="group relative flex h-60 w-60 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-[0_0_50px_rgba(37,99,235,0.5)] active:scale-90 transition-transform">
+      <button onClick={handleTap} className="group relative flex h-60 w-60 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-[0_0_50px_rgba(37,99,235,0.5)] active:scale-90 transition-transform z-10">
         <div className="absolute inset-2 rounded-full border-2 border-white/20 border-dashed animate-spin-slow"></div>
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          {getSpeedReaction()}
-        </div>
         <Wallet className="h-24 w-24 text-white opacity-40 group-hover:opacity-60 transition-opacity" />
       </button>
 
-      <div className="mt-8 w-full max-w-sm">
+      <div className="mt-8 w-full max-w-sm z-10">
         <button onClick={handleClaim} disabled={points < goal || claiming} className="w-full rounded-2xl bg-emerald-500 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
           {claiming ? "Claiming..." : points < goal ? `Claim ₦${moneyValue.toLocaleString()} (Need ${goal - points} more)` : `Claim ₦${moneyValue.toLocaleString()}`}
         </button>
@@ -596,19 +596,12 @@ export function Invest() {
   const [submitting, setSubmitting] = useState(false);
   const [popup, setPopup] = useState(null);
   const [profile, setProfile] = useState({ vip_tier: "None" });
-
-  const estateImages = [
-    { name: "Standard Estate", img: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&fit=crop&q=80&w=600", rate: 8 },
-    { name: "Classic Duplex", img: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=600", rate: 10 },
-    { name: "Modern Villa", img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=600", rate: 12 },
-    { name: "Luxury Mansion", img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&q=80&w=600", rate: 15 },
-    { name: "Oceanfront Villa", img: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&q=80&w=600", rate: 18 },
-    { name: "Prime Commercial Tower", img: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600", rate: 22 },
-  ];
+  const [wallet, setWallet] = useState({ available: 0 });
 
   useEffect(() => {
     api.plans().then(({ data }) => setPlans(data || []));
     api.profile().then(({ data }) => data && setProfile(data));
+    api.wallet().then(({ data }) => data && setWallet(data));
   }, []);
 
   async function submit() {
@@ -616,7 +609,9 @@ export function Invest() {
     if (profile.vip_tier === "None") return setError("You must upgrade to VIP before investing.");
     const n = Number(amount);
     const minAmt = selected?.min_amount || 3000;
+    
     if (!n || n < minAmt) return setError(`Minimum investment is ₦${minAmt.toLocaleString()}`);
+    if (n > wallet.available) return setError(`Insufficient funds. Your wallet balance is ₦${wallet.available.toLocaleString()}`);
 
     setSubmitting(true);
     let matured_at = null;
@@ -637,8 +632,9 @@ export function Invest() {
 
   return (
     <div className="min-h-screen bg-slate-950 pb-24 text-white">
-      <header className="border-b border-blue-400/10 bg-slate-950/95 p-4">
+      <header className="border-b border-blue-400/10 bg-slate-950/95 p-4 flex justify-between items-center">
         <a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a>
+        <p className="text-sm font-bold text-emerald-400">Available: ₦{wallet.available.toLocaleString()}</p>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-8">
         <h2 className="text-3xl font-bold mb-8">Choose an investment</h2>
@@ -672,27 +668,6 @@ export function Invest() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 overflow-y-auto">
           <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0D1526] p-6 my-auto">
             <h3 className="text-xl font-bold">Invest in {selected.name}</h3>
-            {selected.name === "Real Estate" && (
-              <div className="mt-4">
-                <p className="text-sm mb-2">Choose your estate tier:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {estateImages.map((e) => (
-                    <div key={e.name} onClick={() => setAmount(String(selected.min_amount * (e.rate / 10)))} className="cursor-pointer border border-white/10 rounded-xl overflow-hidden hover:border-blue-500">
-                      <img src={e.img} alt={e.name} className="h-20 w-full object-cover" />
-                      <div className="p-2 text-xs bg-slate-900"><p className="font-bold">{e.name}</p><p className="text-blue-400">{e.rate}% ROI</p></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {selected.name === "Crypto Index" && (
-              <div className="mt-4">
-                <p className="text-sm mb-2">Choose lock period:</p>
-                <select value={cryptoPeriod} onChange={(e) => setCryptoPeriod(e.target.value)} className="w-full rounded-xl bg-slate-950 px-4 py-3 outline-none">
-                  <option>30 Days</option><option>3 Months</option><option>6 Months</option><option>1 Year</option>
-                </select>
-              </div>
-            )}
             <div className="mt-4">
               <label className="text-sm mb-1 block">Amount</label>
               <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Min ${selected.min_amount}`} className="w-full rounded-xl bg-slate-950 px-4 py-3 outline-none" />
