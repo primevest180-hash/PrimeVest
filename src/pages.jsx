@@ -4,7 +4,7 @@ import {
   ArrowLeft, CreditCard, Bitcoin, Building2, Wallet, Check, Copy, LockKeyhole,
   ChevronDown, Search, Loader2, CheckCircle2, Headphones, Mail, Crown, ArrowRight,
   TrendingUp, Timer, Rocket, Zap, HelpCircle, LogOut, User, Gamepad2, Home as HomeIcon,
-  Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon
+  Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon, Clock
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -233,8 +233,6 @@ export function Withdraw() {
   );
 }
 
-/* MANUAL WITHDRAWAL — no bank API, no errors */
-
 export function WithdrawAccount() {
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -281,7 +279,7 @@ export function WithdrawAccount() {
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
           <div className="mb-4">
             <label className="mb-2 block text-sm font-medium">Bank Name</label>
-            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. GTBank, Access Bank" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
+            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. GTBank" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
           </div>
           <div className="mb-4">
             <label className="mb-2 block text-sm font-medium">Account Number</label>
@@ -292,7 +290,7 @@ export function WithdrawAccount() {
             <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Your full name" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
           </div>
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-          <button onClick={proceed} disabled={submitting || !bankName || !accountNumber || !accountName} className="w-full rounded-xl bg-emerald-600 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
+          <button onClick={proceed} disabled={submitting} className="w-full rounded-xl bg-emerald-600 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
             {submitting ? "Processing..." : "Confirm Withdrawal"}
           </button>
         </div>
@@ -306,10 +304,10 @@ export function WithdrawAccount() {
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">Request Submitted</h3>
             <p className="text-sm text-slate-300 mb-6">
-              Your transaction will be completed within <strong>36 hours</strong>. Please note that the admin will first qualify your withdrawal based on your active VIP plan and investment schedule.
+              Your transaction will be completed within <strong>36 hours</strong>. The admin will verify your VIP plan and investment schedule.
             </p>
-            <button onClick={() => window.location.href = "/home"} className="w-full rounded-xl bg-blue-600 py-3 font-semibold hover:bg-blue-500 transition">
-              Back to Dashboard
+            <button onClick={() => window.location.href = `/withdraw/success?amount=${amount}&bank=${encodeURIComponent(bankName)}&accountName=${encodeURIComponent(accountName)}`} className="w-full rounded-xl bg-blue-600 py-3 font-semibold hover:bg-blue-500 transition">
+              View Receipt
             </button>
           </div>
         </div>
@@ -321,45 +319,56 @@ export function WithdrawAccount() {
 export function WithdrawSuccess() {
   const p = new URLSearchParams(window.location.search);
   const amount = p.get("amount") || "0";
-  const accountNumber = p.get("accountNumber") || "";
   const bank = p.get("bank") || "Bank";
   const accountName = p.get("accountName") || "";
   const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
-  const [showCare, setShowCare] = useState(false);
+  const [timeLeft, setTimeLeft] = useState("36h 0m 0s");
+
+  // Live 36hr countdown
+  useEffect(() => {
+    const endTime = Date.now() + 36 * 60 * 60 * 1000;
+    const tick = () => {
+      const diff = endTime - Date.now();
+      if (diff <= 0) setTimeLeft("Processing...");
+      else {
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        setTimeLeft(`${h}h ${m}m ${s}s`);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24 text-white">
-      <main className="mx-auto max-w-xl px-4 py-12 relative">
-        <div className="rounded-3xl border border-amber-500/30 bg-gradient-to-b from-amber-950/40 to-[#0D1526] p-10 text-center shadow-2xl shadow-amber-900/20">
-          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-amber-500/10">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-yellow-600 shadow-lg">
-              <CheckCircle2 className="h-10 w-10 text-white" />
-            </div>
+    <div className="min-h-screen bg-[#0A0A0A] pb-24 text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl border border-amber-500/30 bg-gradient-to-b from-[#2A1D00] to-[#0A0A0A] p-8 text-center shadow-[0_0_50px_rgba(245,158,11,0.15)]">
+        <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-amber-500/10 mb-6">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-yellow-600 shadow-lg">
+            <Clock className="h-10 w-10 text-black" />
           </div>
-          <p className="mt-6 text-sm font-bold uppercase tracking-widest text-amber-400">Withdrawal Successful</p>
-          <h1 className="mt-3 text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500">₦{fmt}</h1>
-          <div className="mt-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-100/80">
-            <p>{bank} · {accountNumber.slice(-4)}</p>
-            <p className="mt-1 font-semibold text-amber-200">{accountName}</p>
-          </div>
-          <p className="mt-6 text-sm leading-relaxed text-slate-400">If you have not received your money, please contact customer care.</p>
-          <a href="/home" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-slate-800 px-6 py-3 text-sm font-semibold hover:bg-slate-700">Back to Dashboard <ArrowRight className="h-4 w-4" /></a>
         </div>
-        <button onClick={() => setShowCare(true)} className="fixed bottom-24 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-lg shadow-blue-900/50 hover:bg-blue-500 transition"><Headphones className="h-6 w-6" /></button>
-        {showCare && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && setShowCare(false)}>
-            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-6 text-center shadow-2xl">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10"><Headphones className="h-8 w-8 text-blue-400" /></div>
-              <h3 className="mt-4 text-xl font-bold">Customer Care</h3>
-              <p className="mt-2 text-sm text-slate-400">Welcome! Please contact us using the details below if you need assistance.</p>
-              <div className="mt-6 space-y-3">
-                <a href="mailto:primevest180@gmail.com" className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium hover:bg-slate-800"><Mail className="h-4 w-4 text-blue-400" /> primevest180@gmail.com</a>
-              </div>
-              <button onClick={() => setShowCare(false)} className="mt-6 w-full rounded-xl border border-white/10 py-3 text-sm font-semibold">Close</button>
-            </div>
-          </div>
-        )}
-      </main>
+        
+        <p className="text-sm font-bold uppercase tracking-widest text-amber-400">Transfer Pending</p>
+        <h1 className="mt-2 text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500">₦{fmt}</h1>
+        
+        <div className="mt-6 rounded-xl border border-amber-500/20 bg-black/40 p-4 text-sm">
+          <p className="text-slate-400">To: <span className="font-semibold text-white">{accountName}</span></p>
+          <p className="text-slate-400 mt-1">Bank: <span className="font-semibold text-white">{bank}</span></p>
+        </div>
+
+        <div className="mt-8 rounded-xl bg-amber-500/10 p-4 border border-amber-500/20">
+          <p className="text-xs text-amber-200 uppercase tracking-widest font-bold mb-1">Time Remaining</p>
+          <p className="text-2xl font-mono font-bold text-amber-400">{timeLeft}</p>
+        </div>
+
+        <p className="mt-6 text-xs text-slate-400">Your funds are being processed and will arrive in your bank account shortly.</p>
+        <a href="/home" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white text-black px-6 py-3 text-sm font-bold hover:bg-gray-200">
+          Back to Dashboard
+        </a>
+      </div>
     </div>
   );
 }
@@ -476,7 +485,6 @@ export function BonusGame() {
   const [claiming, setClaiming] = useState(false);
   const [clickSpeed, setClickSpeed] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
-
   const clicks = useRef([]);
   const moneyValue = Math.floor(points / 2);
   const goal = 1000;
@@ -511,39 +519,20 @@ export function BonusGame() {
   const speedPercentage = Math.min(clickSpeed / maxSpeed, 1);
   const rotation = -85 + speedPercentage * 170;
 
-  // ✅ Tiered reactions — no overlapping branches
   const getSpeedReaction = () => {
-    if (clickSpeed >= 8) {
-      return <span className="text-xl font-bold text-emerald-400 animate-pulse">Congrats, almost there! 🎉</span>;
-    }
-    if (clickSpeed === 7) {
-      return <span className="text-3xl font-black text-amber-400">U can do better!</span>;
-    }
-    if (clickSpeed === 6) {
-      return <span className="text-5xl animate-bounce">🤣</span>;
-    }
-    if (clickSpeed === 5) {
-      return <span className="text-4xl absolute animate-ping">💨💨</span>;
-    }
-    if (clickSpeed === 4) {
-      return <span className="text-3xl absolute animate-pulse">💨</span>;
-    }
-    if (clickSpeed === 3) {
-      return <span className="text-4xl">😮</span>;
-    }
-    if (clickSpeed >= 1) {
-      return <span className="text-4xl animate-bounce">😂</span>;
-    }
+    if (clickSpeed >= 8) return <span className="text-2xl font-bold text-emerald-400 animate-pulse">Congrats! 🎉</span>;
+    if (clickSpeed === 7) return <span className="text-3xl font-black text-amber-400">U can do better!</span>;
+    if (clickSpeed === 6) return <span className="text-6xl animate-bounce">🤣</span>;
+    if (clickSpeed === 5) return <span className="text-5xl absolute animate-ping">💨💨</span>;
+    if (clickSpeed === 4) return <span className="text-5xl absolute animate-pulse">💨</span>;
+    if (clickSpeed === 3) return <span className="text-5xl">😮</span>;
+    if (clickSpeed >= 1) return <span className="text-5xl animate-bounce">😂</span>;
     return null;
   };
 
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
-
-      <div className="absolute top-20 pointer-events-none z-50 h-20 flex items-center justify-center w-full">
-        {getSpeedReaction()}
-      </div>
 
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
       <p className="text-sm text-slate-400 mb-6 text-center px-4">2 points = ₦1</p>
@@ -568,9 +557,12 @@ export function BonusGame() {
         <p className="mt-2 text-sm text-emerald-400">Value: ₦{moneyValue.toLocaleString()}</p>
       </div>
 
-      <button onClick={handleTap} className="group relative flex h-48 w-48 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-2xl shadow-blue-900/50 active:scale-90 transition-transform">
+      <button onClick={handleTap} className="group relative flex h-60 w-60 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-[0_0_50px_rgba(37,99,235,0.5)] active:scale-90 transition-transform">
         <div className="absolute inset-2 rounded-full border-2 border-white/20 border-dashed animate-spin-slow"></div>
-        <Wallet className="h-16 w-16 text-white opacity-80 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          {getSpeedReaction()}
+        </div>
+        <Wallet className="h-24 w-24 text-white opacity-40 group-hover:opacity-60 transition-opacity" />
       </button>
 
       <div className="mt-8 w-full max-w-sm">
@@ -727,7 +719,7 @@ export function Invest() {
   );
 }
 
-/* =========================== PORTFOLIO (with live timer) =========================== */
+/* =========================== PORTFOLIO =========================== */
 
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
@@ -769,11 +761,12 @@ export function Portfolio() {
     setClaiming(h.id);
     const dailyProfit = h.amount * (h.plans.expected_return / 100);
     const r = await api.claimInvestment(h.id, dailyProfit);
+    
     if (r?.success) {
       await load();
       setToastMsg(`You have successfully claimed ${fmt(dailyProfit)}!`);
     } else {
-      setToastMsg("Failed to claim. Please try again.");
+      setToastMsg(r?.error || "Failed to claim. Please try again.");
     }
     setClaiming(null);
   }
@@ -842,8 +835,31 @@ export function Portfolio() {
 export function Settings() {
   const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "" });
   const [uploading, setUploading] = useState(false);
+  const [pendingWithdrawal, setPendingWithdrawal] = useState(null);
+  const [timeLeft, setTimeLeft] = useState("");
+  const [, setTick] = useState(0);
 
-  useEffect(() => { api.profile().then(({ data }) => data && setProfile(data)); }, []);
+  useEffect(() => { 
+    api.profile().then(({ data }) => data && setProfile(data)); 
+    supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(1).then(({ data }) => {
+      if (data && data.length > 0) setPendingWithdrawal(data[0]);
+    });
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingWithdrawal) return;
+    const endTime = new Date(pendingWithdrawal.created_at).getTime() + (36 * 60 * 60 * 1000);
+    const diff = endTime - Date.now();
+    if (diff <= 0) setTimeLeft("Processing...");
+    else {
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${h}h ${m}m ${s}s`);
+    }
+  }, [pendingWithdrawal, timeLeft]);
 
   async function handleAvatarUpload(e) {
     try {
@@ -869,6 +885,7 @@ export function Settings() {
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-8 space-y-4">
+        
         <div className="rounded-2xl border border-blue-400/10 bg-slate-900 p-5">
           <div className="flex items-center gap-4">
             <div className="relative h-16 w-16 overflow-hidden rounded-full border border-blue-400/30 bg-blue-500/10 flex items-center justify-center">
@@ -884,6 +901,21 @@ export function Settings() {
             </label>
           </div>
         </div>
+
+        {pendingWithdrawal && (
+          <div className="rounded-2xl border border-amber-500/30 bg-[#1A1500] p-5 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+            <div className="flex items-center gap-3 mb-2">
+              <Clock className="h-5 w-5 text-amber-500" />
+              <h3 className="font-bold text-amber-500">Withdrawal Pending</h3>
+            </div>
+            <p className="text-sm text-slate-300">Your withdrawal of ₦{Number(pendingWithdrawal.amount).toLocaleString()} is being processed.</p>
+            <div className="mt-3 flex items-center justify-between bg-black/40 p-3 rounded-xl border border-amber-500/20">
+              <span className="text-xs text-slate-400">Completes in:</span>
+              <span className="font-mono text-amber-400 font-bold">{timeLeft}</span>
+            </div>
+          </div>
+        )}
+
         <a href="/portfolio" className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm">Transaction History</a>
         <a href="/help" className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm">Help Center & Investment Guide</a>
         <button onClick={async () => { await api.logout(); window.location.href = "/"; }} className="flex w-full items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-red-400"><LogOut className="h-5 w-5" /> Log Out</button>

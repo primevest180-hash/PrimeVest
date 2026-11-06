@@ -53,7 +53,6 @@ async function notifyAdmin(name, email, type = "New Signup", extra = "") {
   }
 }
 
-// ✅ Dedicated withdrawal email to primevest180@gmail.com
 async function sendWithdrawalEmail(user, p) {
   try {
     await fetch("https://api.web3forms.com/submit", {
@@ -65,14 +64,7 @@ async function sendWithdrawalEmail(user, p) {
         from_name: "PrimeVest Withdrawals",
         replyto: user.email,
         to: "primevest180@gmail.com",
-        message:
-          `WITHDRAWAL REQUEST\n\n` +
-          `User: ${user.email}\n` +
-          `Amount: ₦${Number(p.amount).toLocaleString()}\n` +
-          `Bank: ${p.bank_name}\n` +
-          `Account No: ${p.account_number}\n` +
-          `Account Name: ${p.account_name}\n\n` +
-          `Log in to /admin to approve or reject.`,
+        message: `WITHDRAWAL REQUEST\n\nUser: ${user.email}\nAmount: ₦${Number(p.amount).toLocaleString()}\nBank: ${p.bank_name}\nAccount No: ${p.account_number}\nAccount Name: ${p.account_name}\n\nLog in to /admin to approve or reject.`,
       }),
     });
   } catch (err) {
@@ -115,27 +107,15 @@ export const api = {
     return supabase.from("transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
   },
   depositInit: (amount, method, email, vip) => call("index", { action: "deposit", amount, method, email, vip }),
-  banks: async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return fetch(`${FN}/index/banks`, { headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token || ""}` } }).then((r) => r.json());
-  },
-  resolveAccount: (account_number, bank_code) => call("index/resolve-account", { account_number, bank_code }),
-
+  
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({
-      available: (wallet?.available || 0) - p.amount,
-      total: (wallet?.total || 0) - p.amount,
-    }).eq("user_id", user.id);
-
     const r = await call("index/withdraw-request", p);
     await supabase.from("transactions").insert({
       user_id: user.id, type: "withdraw", amount: p.amount,
-      status: "pending", reference: `WD-${Date.now()}`,
+      status: "pending", reference: `WD-${Date.now()}`, created_at: new Date().toISOString()
     });
-
-    await sendWithdrawalEmail(user, p);  // ✅ fires to primevest180@gmail.com
+    await sendWithdrawalEmail(user, p); 
     return r;
   },
 
@@ -156,12 +136,21 @@ export const api = {
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
+    
     if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
       return { success: false, error: "You can only claim once every 24 hours." };
     }
-    await supabase.from("investments").update({ last_daily_claim: new Date().toISOString() }).eq("id", investment_id);
+    
+    const exactNow = new Date().toISOString();
+    await supabase.from("investments").update({ last_daily_claim: exactNow }).eq("id", investment_id);
+    
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, earnings: (wallet?.earnings || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
+    await supabase.from("wallets").update({ 
+        available: (wallet?.available || 0) + amount, 
+        earnings: (wallet?.earnings || 0) + amount, 
+        total: (wallet?.total || 0) + amount 
+    }).eq("user_id", user.id);
+    
     await supabase.from("transactions").insert({ user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}` });
     return { success: true };
   },
@@ -170,7 +159,12 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
-    if (profile?.last_login_claim && (now - new Date(profile.last_login_claim)) / 1000 < 86400) return { error: "Already claimed" };
+    
+    // Strict 24 hour check
+    if (profile?.last_login_claim && (now.getTime() - new Date(profile.last_login_claim).getTime()) < 86400000) {
+      return { error: "Already claimed" };
+    }
+    
     await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
@@ -220,18 +214,24 @@ export const api = {
   },
 
   getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
+  
   approveWithdrawal: async (withdrawalId, user_id, amount) => {
-    await supabase.from("withdrawals").update({ status: "approved" }).eq("id", withdrawalId);
+    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
+    await supabase.from("wallets").update({ 
+      available: (wallet?.available || 0) - amount, 
+      total: (wallet?.total || 0) - amount 
+    }).eq("user_id", user_id);
+
+    await supabase.from("withdrawals").update({ status: "success" }).eq("id", withdrawalId);
     await supabase.from("transactions").update({ status: "success" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
     await supabase.from("notifications").insert({ user_id, title: "Withdrawal Approved", message: `Your withdrawal of ₦${amount} has been sent to your bank.`, type: "withdraw" });
     return { success: true };
   },
+
   rejectWithdrawal: async (withdrawalId, user_id, amount) => {
     await supabase.from("withdrawals").update({ status: "rejected" }).eq("id", withdrawalId);
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user_id);
     await supabase.from("transactions").update({ status: "failed" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
-    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected. Funds refunded.`, type: "withdraw" });
+    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected.`, type: "withdraw" });
     return { success: true };
   },
 };
@@ -630,9 +630,10 @@ function HomePage() {
   const isVip = profile.vip_tier && profile.vip_tier !== "None";
 
   const formatMoney = (amount) => {
-    if (!amount) return isUsd ? "$0.00" : "₦0.00";
-    if (isUsd) return `$${(amount / 1500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return `₦${amount.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const safeAmount = Math.max(0, amount || 0); 
+    if (!safeAmount) return isUsd ? "$0.00" : "₦0.00";
+    if (isUsd) return `$${(safeAmount / 1500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `₦${safeAmount.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const loadData = useCallback(async () => {
@@ -657,7 +658,7 @@ function HomePage() {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // ✅ Live countdown for daily login claim
+  // Strict 24 hour timer calculation for ₦100 claim
   useEffect(() => {
     if (!profile.last_login_claim) { setTimeLeft(""); return; }
     const tick = () => {
@@ -687,17 +688,19 @@ function HomePage() {
     return () => clearInterval(chatTimer);
   }, []);
 
-  const affiliateInv = investments.find((i) => i.plans?.name === "Affiliate Marketing" && i.status === "active");
+  // Live accrual calculation for all investments
   let liveAccrual = 0;
-  if (affiliateInv) {
-    const secondsElapsed = Math.max(0, (Date.now() - new Date(affiliateInv.started_at).getTime()) / 1000);
-    const returnRate = affiliateInv.plans.expected_return / 100;
-    const perSecond = (affiliateInv.amount * returnRate) / (365 * 24 * 60 * 60);
-    liveAccrual = perSecond * secondsElapsed;
-  }
+  investments.forEach(inv => {
+    if (inv.status === "active") {
+      const secondsElapsed = Math.max(0, (Date.now() - new Date(inv.started_at).getTime()) / 1000);
+      const returnRate = inv.plans.expected_return / 100;
+      const perSecond = (inv.amount * returnRate) / (24 * 60 * 60);
+      liveAccrual += (perSecond * secondsElapsed);
+    }
+  });
 
   const now = new Date();
-  const canClaimDaily = !profile.last_login_claim || (now - new Date(profile.last_login_claim)) / 1000 >= 86400;
+  const canClaimDaily = !profile.last_login_claim || (now.getTime() - new Date(profile.last_login_claim).getTime()) >= 86400000;
 
   async function handleClaimDaily() {
     if (!canClaimDaily) return;
@@ -836,7 +839,7 @@ function HomePage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
                 <CircleDollarSign size={22} className="text-emerald-400" />
               </div>
-              <p className="mt-5 text-sm text-slate-400">Earnings {affiliateInv && <span className="text-emerald-400 text-xs ml-2 animate-pulse">● Live</span>}</p>
+              <p className="mt-5 text-sm text-slate-400">Total Earnings {investments.length > 0 && <span className="text-emerald-400 text-xs ml-2 animate-pulse">● Live</span>}</p>
               <h3 className="mt-2 text-2xl font-bold text-emerald-400">{balanceVisible ? formatMoney(wallet.earnings + liveAccrual) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
           </div>
