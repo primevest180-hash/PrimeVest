@@ -4,11 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 import {
   ShieldCheck, Mail, Lock, Eye, EyeOff, ArrowRight, TrendingUp, UserRound, CheckCircle2,
   Bell, Home as HomeIcon, Wallet, ArrowDownToLine, ArrowUpFromLine, Users, Gift, Share2,
-  Copy, Check, MessageCircle, Send, ChevronRight, ChevronDown, CircleDollarSign, Clock3,
+  Copy, Check, MessageSquare, Send, ChevronRight, ChevronDown, CircleDollarSign, Clock3,
   Settings as SettingsIcon, LogOut, X, Info, ArrowLeft, CreditCard, LockKeyhole, AlertCircle,
   Building2, Bitcoin, PiggyBank, BarChart3, PieChart, Search, XCircle, Loader2, ThumbsUp,
   Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
-  Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
+  Rocket, Timer, Zap, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
 } from "lucide-react";
 import Terms from "./terms";
 import {
@@ -74,7 +74,6 @@ async function sendWithdrawalEmail(user, p) {
 
 export const api = {
   signup: async (name, email, password, ref) => {
-    // Auto-generate name from email if not provided (e.g. john@gmail.com -> John)
     const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
     const res = await supabase.auth.signUp({ email, password, options: { data: { name: finalName, ref } } });
     if (!res.error) notifyAdmin(finalName, email, "New User Signup");
@@ -110,15 +109,40 @@ export const api = {
   },
   depositInit: (amount, method, email, vip) => call("index", { action: "deposit", amount, method, email, vip }),
   
+  // ✅ FIXED WITHDRAW: Bypasses Edge Function entirely. Writes straight to DB.
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
-    const r = await call("index/withdraw-request", p);
-    await supabase.from("transactions").insert({
-      user_id: user.id, type: "withdraw", amount: p.amount,
-      status: "pending", reference: `WD-${Date.now()}`, created_at: new Date().toISOString()
+    
+    // 1. Save the request to the "withdrawals" table for Admin
+    const { error } = await supabase.from("withdrawals").insert({
+      user_id: user.id,
+      amount: p.amount,
+      bank_name: p.bank_name,
+      account_number: p.account_number,
+      account_name: p.account_name,
+      status: "pending",
+      created_at: new Date().toISOString()
     });
+
+    if (error) {
+      console.error("Withdrawal insert error:", error);
+      return { success: false, error: "Failed to save withdrawal request." };
+    }
+
+    // 2. Log the pending transaction for the user
+    await supabase.from("transactions").insert({
+      user_id: user.id, 
+      type: "withdraw", 
+      amount: p.amount,
+      status: "pending", 
+      reference: `WD-${Date.now()}`, 
+      created_at: new Date().toISOString()
+    });
+
+    // 3. Send email to admin
     await sendWithdrawalEmail(user, p); 
-    return r;
+    
+    return { success: true };
   },
 
   claimBonus: async (amount) => {
@@ -137,8 +161,8 @@ export const api = {
 
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
     
+    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
     if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
       return { success: false, error: "You can only claim once every 24 hours." };
     }
@@ -217,7 +241,6 @@ export const api = {
   getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
   
   approveWithdrawal: async (withdrawalId, user_id, amount) => {
-    // Deduct real money from wallet on approval
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
     await supabase.from("wallets").update({ 
       available: (wallet?.available || 0) - amount, 
@@ -689,15 +712,13 @@ function HomePage() {
     return () => clearInterval(chatTimer);
   }, []);
 
-  // CALCULATE INVESTED DIRECTLY FROM PORTFOLIO (Fixes dashboard wipe)
   const actualInvested = investments.filter(i => i.status === "active").reduce((sum, inv) => sum + Number(inv.amount), 0);
 
   let liveAccrual = 0;
   investments.forEach(inv => {
     if (inv.status === "active") {
       const secondsElapsed = Math.max(0, (Date.now() - new Date(inv.started_at).getTime()) / 1000);
-      const returnRate = inv.plans.expected_return / 100;
-      const perSecond = (inv.amount * returnRate) / (24 * 60 * 60);
+      const perSecond = 0.002; // 1 Kobo every 5 seconds
       liveAccrual += (perSecond * secondsElapsed);
     }
   });
