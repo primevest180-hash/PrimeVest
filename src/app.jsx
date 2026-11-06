@@ -165,19 +165,11 @@ export const api = {
 
   upgradeVIP: async (tier, cost) => {
     const { data: { user } } = await supabase.auth.getUser();
-    
-    // 1. Update Profile
     await supabase.from("profiles").update({ vip_tier: tier }).eq("id", user.id);
-    
-    // 2. Log Transaction
     await supabase.from("transactions").insert({ user_id: user.id, type: "vip_purchase", amount: cost, status: "success", reference: `VIP-${Date.now()}` });
-    
-    // 3. Update Wallet
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
     const bonus = tier === "VIP 1" ? 5000 : tier === "VIP 2" ? 10000 : 17000;
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus, total: (wallet?.total || 0) + bonus }).eq("user_id", user.id);
-    
-    // 4. Notification
     await supabase.from("notifications").insert({ user_id: user.id, title: "VIP Upgraded", message: `You are now a ${tier}. ₦${bonus} investment bonus added to your wallet.`, type: "system" });
     
     notifyAdmin(user.email, user.email, `VIP Subscription Purchased (${tier})`); 

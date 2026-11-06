@@ -8,9 +8,6 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
-// ============================================================
-// GLOBAL TOAST (FLOATING NOTIFICATION)
-// ============================================================
 export const Toast = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 4000);
@@ -27,9 +24,6 @@ export const Toast = ({ message, onClose }) => {
   );
 };
 
-// ============================================================
-// DEPOSIT PAGES
-// ============================================================
 export function Deposit() {
   const [amount, setAmount] = useState("");
   const [region, setRegion] = useState("Nigeria");
@@ -93,7 +87,6 @@ export function DepositCard() {
     const r = await api.depositInit(amount, "card", user.email);
     setLoading(false);
     
-    // FIXED: Check for Paystack's authorization_url
     if (r?.authorization_url) {
       window.location.href = r.authorization_url;
     } else if (r?.url) {
@@ -106,8 +99,6 @@ export function DepositCard() {
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
       <header className="border-b border-white/5 bg-[#070D1A]/95"><div className="mx-auto flex h-20 max-w-5xl items-center gap-4 px-5"><a href={`/deposit/payment?amount=${amount}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><ArrowLeft size={19} /></a><h1 className="text-lg font-semibold">Card Payment</h1></div></header>
-      
-      {/* CENTERED BUTTON */}
       <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-5">
         <div className="w-full max-w-xl rounded-2xl border border-white/8 bg-[#0D1526] p-6">
           {error && <div className="mt-4 rounded-xl bg-red-500/5 p-4 text-sm text-red-300">{error}</div>}
@@ -151,9 +142,6 @@ export function DepositBitcoin() {
   );
 }
 
-// ============================================================
-// WITHDRAW PAGES
-// ============================================================
 export function Withdraw() {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
@@ -192,12 +180,19 @@ export function WithdrawAccount() {
   const [status, setStatus] = useState("idle");
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingBanks, setLoadingBanks] = useState(true);
 
   const params = new URLSearchParams(window.location.search);
   const amount = Number(params.get("amount") || 0);
   const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
 
-  useEffect(() => { api.banks().then((d) => setBanks(Array.isArray(d) ? d : [])); }, []);
+  useEffect(() => { 
+    api.banks().then((d) => {
+      setBanks(Array.isArray(d) ? d : []);
+      setLoadingBanks(false);
+    }); 
+  }, []);
+
   const filtered = banks.filter((b) => b.name.toLowerCase().includes(bankSearch.toLowerCase()));
 
   async function check() {
@@ -227,11 +222,11 @@ export function WithdrawAccount() {
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium">Select Bank</label>
             <div className="relative">
-              <button onClick={() => setShowBanks(!showBanks)} className="flex w-full items-center justify-between rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-left">{selectedBank ? <span className="text-sm">{selectedBank.name}</span> : <span className="text-sm text-slate-500">Choose bank</span>}<ChevronDown className="h-5 w-5" /></button>
+              <button onClick={() => setShowBanks(!showBanks)} className="flex w-full items-center justify-between rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-left">{selectedBank ? <span className="text-sm">{selectedBank.name}</span> : <span className="text-sm text-slate-500">{loadingBanks ? "Loading banks..." : "Choose bank"}</span>}<ChevronDown className="h-5 w-5" /></button>
               {showBanks && (
                 <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-60 overflow-hidden rounded-2xl border border-blue-400/10 bg-slate-900 shadow-2xl">
                   <div className="border-b border-slate-800 p-3"><input value={bankSearch} onChange={(e) => setBankSearch(e.target.value)} placeholder="Search bank..." className="w-full rounded-xl bg-slate-950 px-3 py-2 text-sm outline-none" /></div>
-                  <div className="overflow-y-auto h-48 p-2">{filtered.map((b) => (<button key={b.code + b.name} onClick={() => { setSelectedBank(b); setShowBanks(false); setStatus("idle"); setAccountName(""); }} className="w-full rounded-xl p-3 text-left text-sm hover:bg-blue-950/50">{b.name}</button>))}</div>
+                  <div className="overflow-y-auto h-48 p-2">{filtered.length === 0 ? <p className="p-3 text-sm text-slate-500">No banks found</p> : filtered.map((b) => (<button key={b.code + b.name} onClick={() => { setSelectedBank(b); setShowBanks(false); setStatus("idle"); setAccountName(""); }} className="w-full rounded-xl p-3 text-left text-sm hover:bg-blue-950/50">{b.name}</button>))}</div>
                 </div>
               )}
             </div>
@@ -291,9 +286,6 @@ export function WithdrawSuccess() {
   );
 }
 
-// ============================================================
-// VIP & VIP CHECKOUT
-// ============================================================
 export function VIP() {
   const navigate = useNavigate();
   return (
@@ -356,6 +348,7 @@ export function VIPCheckout() {
     const { data: { user } } = await supabase.auth.getUser();
     const r = await api.depositInit(price, "card", user.email, true);
     setLoading(false);
+    
     if (r?.authorization_url) {
        localStorage.setItem('pending_vip_tier', tier);
        localStorage.setItem('pending_vip_price', price);
@@ -404,9 +397,6 @@ export function VIPCheckout() {
   );
 }
 
-// ============================================================
-// BONUS GAME (FIXED SPEEDOMETER & TOASTS)
-// ============================================================
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
@@ -502,9 +492,6 @@ export function BonusGame() {
   );
 }
 
-// ============================================================
-// INVEST PAGE (Strict VIP)
-// ============================================================
 export function Invest() {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -653,7 +640,7 @@ export function Portfolio() {
     setClaiming(h.id);
     const dailyProfit = h.amount * (h.plans.expected_return / 100); 
     await api.claimInvestment(h.id, dailyProfit);
-    await load(); // Refresh data immediately
+    await load(); 
     setClaiming(null);
     setToastMsg(`You have claimed your investment! The funds will show on your dashboard.`);
   }
