@@ -11,10 +11,10 @@ import {
   Rocket, Timer, Zap, MessageSquare, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
 } from "lucide-react";
 import Terms from "./terms";
-import { 
+import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest, 
-  Portfolio, Settings, Help 
+  Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest,
+  Portfolio, Settings, Help
 } from "./pages";
 
 export const supabase = createClient(
@@ -34,22 +34,49 @@ async function call(path, body) {
   return res.json();
 }
 
-async function notifyAdmin(name, email, type = "New Signup") {
+async function notifyAdmin(name, email, type = "New Signup", extra = "") {
   try {
     await fetch("https://api.web3forms.com/submit", {
-      method: "POST", 
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        access_key: import.meta.env.VITE_WEB3FORMS_KEY, 
-        subject: `PrimeVest: ${type}`, 
-        from_name: "PrimeVest", 
-        name, 
-        email, 
-        message: `User Action:\nType: ${type}\nName: ${name}\nEmail: ${email}` 
+      body: JSON.stringify({
+        access_key: import.meta.env.VITE_WEB3FORMS_KEY,
+        subject: `PrimeVest: ${type}`,
+        from_name: "PrimeVest",
+        name,
+        email,
+        message: `Type: ${type}\nName: ${name}\nEmail: ${email}\n${extra}`,
       }),
     });
   } catch (err) {
     console.error("Email failed to send", err);
+  }
+}
+
+// ✅ Dedicated withdrawal email to primevest180@gmail.com
+async function sendWithdrawalEmail(user, p) {
+  try {
+    await fetch("https://api.web3forms.com/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_key: import.meta.env.VITE_WEB3FORMS_KEY,
+        subject: `🚨 New Withdrawal Request — ₦${Number(p.amount).toLocaleString()}`,
+        from_name: "PrimeVest Withdrawals",
+        replyto: user.email,
+        to: "primevest180@gmail.com",
+        message:
+          `WITHDRAWAL REQUEST\n\n` +
+          `User: ${user.email}\n` +
+          `Amount: ₦${Number(p.amount).toLocaleString()}\n` +
+          `Bank: ${p.bank_name}\n` +
+          `Account No: ${p.account_number}\n` +
+          `Account Name: ${p.account_name}\n\n` +
+          `Log in to /admin to approve or reject.`,
+      }),
+    });
+  } catch (err) {
+    console.error("Withdrawal email failed", err);
   }
 }
 
@@ -90,22 +117,28 @@ export const api = {
   depositInit: (amount, method, email, vip) => call("index", { action: "deposit", amount, method, email, vip }),
   banks: async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    return fetch(`${FN}/index/banks`, { headers: { "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY, "Authorization": `Bearer ${session?.access_token || ""}` } }).then(r => r.json());
+    return fetch(`${FN}/index/banks`, { headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token || ""}` } }).then((r) => r.json());
   },
   resolveAccount: (account_number, bank_code) => call("index/resolve-account", { account_number, bank_code }),
-  
+
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ 
-      available: (wallet?.available || 0) - p.amount, 
-      total: (wallet?.total || 0) - p.amount 
+    await supabase.from("wallets").update({
+      available: (wallet?.available || 0) - p.amount,
+      total: (wallet?.total || 0) - p.amount,
     }).eq("user_id", user.id);
+
     const r = await call("index/withdraw-request", p);
-    await supabase.from("transactions").insert({ user_id: user.id, type: "withdraw", amount: p.amount, status: "pending", reference: `WD-${Date.now()}` });
+    await supabase.from("transactions").insert({
+      user_id: user.id, type: "withdraw", amount: p.amount,
+      status: "pending", reference: `WD-${Date.now()}`,
+    });
+
+    await sendWithdrawalEmail(user, p);  // ✅ fires to primevest180@gmail.com
     return r;
   },
-  
+
   claimBonus: async (amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("transactions").insert({ user_id: user.id, type: "bonus", amount, status: "success", reference: `BONUS-${Date.now()}` });
@@ -114,22 +147,18 @@ export const api = {
     await supabase.from("notifications").insert({ user_id: user.id, title: "Bonus Claimed", message: `You earned ₦${amount} from the tap game!`, type: "bonus" });
     return { success: true };
   },
-  
-  // FIXED: Now sends action="invest" to match the new Edge Function
+
   invest: async (plan_id, amount, daily_profit, matured_at) => {
     const { data: { user } } = await supabase.auth.getUser();
-    return call("index", { 
-      action: "invest", 
-      plan_id, 
-      amount, 
-      daily_profit, 
-      matured_at, 
-      email: user.email 
-    });
+    return call("index", { action: "invest", plan_id, amount, daily_profit, matured_at, email: user.email });
   },
-  
+
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
+    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
+    if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
+      return { success: false, error: "You can only claim once every 24 hours." };
+    }
     await supabase.from("investments").update({ last_daily_claim: new Date().toISOString() }).eq("id", investment_id);
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, earnings: (wallet?.earnings || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
@@ -142,7 +171,6 @@ export const api = {
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
     if (profile?.last_login_claim && (now - new Date(profile.last_login_claim)) / 1000 < 86400) return { error: "Already claimed" };
-    
     await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
@@ -155,23 +183,17 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("referral_code, referral_earnings").eq("id", user.id).single();
     if (!profile?.referral_code) return { error: "You don't have a referral code." };
-
     const { data: referrals } = await supabase.from("profiles").select("id").eq("referred_by", profile.referral_code);
     if (!referrals || referrals.length === 0) return { error: "No one has used your link yet." };
-
-    const expectedEarnings = referrals.length * 1000; 
+    const expectedEarnings = referrals.length * 1000;
     const currentEarnings = profile?.referral_earnings || 0;
     if (currentEarnings >= expectedEarnings) return { error: "You have already been rewarded for all your referrals." };
-
     const amountToPay = expectedEarnings - currentEarnings;
-
     await supabase.from("profiles").update({ referral_earnings: expectedEarnings }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + amountToPay, total: (wallet?.total || 0) + amountToPay }).eq("user_id", user.id);
-    
     await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount: amountToPay, status: "success", reference: `REF-${Date.now()}` });
     await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amountToPay} for your referrals!`, type: "referral" });
-    
     return { amount: amountToPay };
   },
 
@@ -183,29 +205,25 @@ export const api = {
     const bonus = tier === "VIP 1" ? 5000 : tier === "VIP 2" ? 10000 : 17000;
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus, total: (wallet?.total || 0) + bonus }).eq("user_id", user.id);
     await supabase.from("notifications").insert({ user_id: user.id, title: "VIP Upgraded", message: `You are now a ${tier}. ₦${bonus} investment bonus added to your wallet.`, type: "system" });
-    
-    notifyAdmin(user.email, user.email, `VIP Subscription Purchased (${tier})`); 
-    
+    notifyAdmin(user.email, user.email, `VIP Subscription Purchased (${tier})`);
     return { success: true };
   },
-  
+
   uploadAvatar: async (file, userId) => {
-    const fileExt = file.name.split('.').pop();
+    const fileExt = file.name.split(".").pop();
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
-    const { error } = await supabase.storage.from('avatars').upload(fileName, file);
+    const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = await supabase.storage.from('avatars').getPublicUrl(fileName);
-    await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', userId);
+    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
+    await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },
 
-  getAdminWithdrawals: async () => {
-    return supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false });
-  },
+  getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
   approveWithdrawal: async (withdrawalId, user_id, amount) => {
     await supabase.from("withdrawals").update({ status: "approved" }).eq("id", withdrawalId);
     await supabase.from("transactions").update({ status: "success" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
-    await supabase.from("notifications").insert({ user_id: user_id, title: "Withdrawal Approved", message: `Your withdrawal of ₦${amount} has been sent to your bank.`, type: "withdraw" });
+    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Approved", message: `Your withdrawal of ₦${amount} has been sent to your bank.`, type: "withdraw" });
     return { success: true };
   },
   rejectWithdrawal: async (withdrawalId, user_id, amount) => {
@@ -213,9 +231,9 @@ export const api = {
     const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user_id);
     await supabase.from("transactions").update({ status: "failed" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
-    await supabase.from("notifications").insert({ user_id: user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected. Funds refunded.`, type: "withdraw" });
+    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected. Funds refunded.`, type: "withdraw" });
     return { success: true };
-  }
+  },
 };
 
 function LoadingScreen() {
@@ -296,12 +314,10 @@ function Hero() {
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
             <Sparkles className="h-4 w-4" />Trusted by 550,000+ investors
           </div>
-          <h1 className="text-5xl font-bold leading-tight text-white lg:text-7xl">Grow your wealth with <span className="bg-linear-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">confidence</span></h1>
-          
+          <h1 className="text-5xl font-bold leading-tight text-white lg:text-7xl">Grow your wealth with <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">confidence</span></h1>
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
             PrimeVest is your all-in-one wealth management platform. Whether you're looking to grow your savings with high-yield portfolios, invest in real estate, or earn through our interactive bonus games, we provide a secure, transparent, and effortless way to build your financial future.
           </p>
-
           <div className="mt-8 flex flex-wrap gap-4">
             <Link to="/signup" className="inline-flex items-center rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-500">Start Investing<ArrowRight className="ml-2 h-4 w-4" /></Link>
             <a href="#strategies" className="rounded-lg border border-slate-600 px-6 py-3 font-semibold text-slate-200 transition hover:bg-slate-800">View Strategies</a>
@@ -415,19 +431,13 @@ function Testimonials() {
 
 function LandingPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        window.location.href = "/home"; 
-      } else {
-        setCheckingAuth(false);
-      }
+      if (data.session) window.location.href = "/home";
+      else setCheckingAuth(false);
     });
   }, []);
-
   if (checkingAuth) return <LoadingScreen />;
-
   return (
     <main className="min-h-screen bg-slate-950">
       <Navbar />
@@ -497,8 +507,8 @@ function Login() {
             <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Logging in..." : "Log In"}</button>
           </form>
           <div className="mt-6 space-y-3">
-             <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Continue with Google</button>
-             <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Continue with GitHub</button>
+            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Continue with Google</button>
+            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Continue with GitHub</button>
           </div>
           <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
             <p>Don't have an account? <Link to="/signup" className="font-semibold text-blue-400">Create one</Link></p>
@@ -549,7 +559,7 @@ function Signup() {
           <div className="my-16">
             <h1 className="text-4xl font-bold leading-tight">Create your PrimeVest account.</h1>
             <div className="mt-8 space-y-4">
-              {["Access dashboard","Explore pages","Manage account"].map((i) => (
+              {["Access dashboard", "Explore pages", "Manage account"].map((i) => (
                 <div key={i} className="flex items-center gap-3"><CheckCircle2 size={19} className="text-blue-200" /><span className="text-sm text-blue-50">{i}</span></div>
               ))}
             </div>
@@ -577,8 +587,8 @@ function Signup() {
             <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Creating..." : "Create Account"}</button>
           </form>
           <div className="mt-6 space-y-3">
-             <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Sign up with Google</button>
-             <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Sign up with GitHub</button>
+            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Sign up with Google</button>
+            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Sign up with GitHub</button>
           </div>
           <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
             <p>Already have an account? <Link to="/login" className="font-semibold text-blue-400">Log in</Link></p>
@@ -604,15 +614,16 @@ function HomePage() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [shareMessage, setShareMessage] = useState("");
   const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [timeLeft, setTimeLeft] = useState("");
 
   const [messages, setMessages] = useState([
-    { id: 1, user: "PrimeVest Bot", text: "Welcome to the Global Chat! 🚀", time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) },
-    { id: 2, user: "Chinedu O.", text: "Just claimed my daily ₦300! PrimeVest is paying 🔥", time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) },
+    { id: 1, user: "PrimeVest Bot", text: "Welcome to the Global Chat! 🚀", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+    { id: 2, user: "Chinedu O.", text: "Just claimed my daily ₦300! PrimeVest is paying 🔥", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
   ]);
   const [newMsg, setNewMsg] = useState("");
 
@@ -626,14 +637,12 @@ function HomePage() {
 
   const loadData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    
     let { data: w, error } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
     if (error || !w) {
       await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
       const retry = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       w = retry.data;
     }
-
     const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
     if (w) setWallet(w);
     if (p.data) setProfile(p.data);
@@ -644,9 +653,28 @@ function HomePage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  // ✅ Live countdown for daily login claim
+  useEffect(() => {
+    if (!profile.last_login_claim) { setTimeLeft(""); return; }
+    const tick = () => {
+      const next = new Date(profile.last_login_claim).getTime() + 86400000;
+      const diff = next - Date.now();
+      if (diff <= 0) setTimeLeft("Ready!");
+      else {
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        setTimeLeft(`${h}h ${m}m ${s}s`);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [profile.last_login_claim]);
 
   useEffect(() => {
     const chatTimer = setInterval(() => {
@@ -654,15 +682,15 @@ function HomePage() {
       const replies = ["I just reinvested my profit.", "PrimeVest is the best.", "The daily claims are so smooth.", "Just hit my 7-day streak!", "Withdrawals are instant wow."];
       const randomBot = bots[Math.floor(Math.random() * bots.length)];
       const randomReply = replies[Math.floor(Math.random() * replies.length)];
-      setMessages((prev) => [...prev, { id: Date.now(), user: randomBot, text: randomReply, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }]);
+      setMessages((prev) => [...prev, { id: Date.now(), user: randomBot, text: randomReply, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     }, 3600000);
     return () => clearInterval(chatTimer);
   }, []);
 
-  const affiliateInv = investments.find(i => i.plans?.name === "Affiliate Marketing" && i.status === "active");
+  const affiliateInv = investments.find((i) => i.plans?.name === "Affiliate Marketing" && i.status === "active");
   let liveAccrual = 0;
   if (affiliateInv) {
-    const secondsElapsed = Math.max(0, (new Date() - new Date(affiliateInv.started_at)) / 1000);
+    const secondsElapsed = Math.max(0, (Date.now() - new Date(affiliateInv.started_at).getTime()) / 1000);
     const returnRate = affiliateInv.plans.expected_return / 100;
     const perSecond = (affiliateInv.amount * returnRate) / (365 * 24 * 60 * 60);
     liveAccrual = perSecond * secondsElapsed;
@@ -674,36 +702,28 @@ function HomePage() {
   async function handleClaimDaily() {
     if (!canClaimDaily) return;
     const r = await api.claimDailyLogin();
-    if (r.error) return alert("You can only claim once every 24 hours.");
+    if (r.error) return setToastMsg("You can only claim once every 24 hours.");
     setToastMsg("You have claimed your bonus of ₦100!");
     loadData();
   }
 
   async function handleShare() {
-    const link = `${window.location.origin}/signup?ref=${profile.referral_code || ""}`;
-    await navigator.clipboard.writeText(link);
-    setCopied(true);
     const res = await api.rewardReferral();
-    if (res.amount) {
-      setShareMessage(`Success! You earned ₦${res.amount.toLocaleString()} for your referrals.`);
-      loadData();
-    } else if (res.error) {
-      setShareMessage(res.error);
-    }
-    setTimeout(() => { setCopied(false); }, 3000);
+    if (res.amount) { setShareMessage(`Success! You earned ₦${res.amount.toLocaleString()} for your referrals.`); loadData(); }
+    else if (res.error) setShareMessage(res.error);
   }
 
   function sendMessage(e) {
     e.preventDefault();
     if (!newMsg.trim()) return;
-    setMessages((prev) => [...prev, { id: Date.now(), user: profile.name, text: newMsg, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }]);
+    setMessages((prev) => [...prev, { id: Date.now(), user: profile.name, text: newMsg, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     setNewMsg("");
   }
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className={`min-h-screen pb-28 text-white relative transition-colors duration-500 ${isVip ? 'bg-[#140F00]' : 'bg-[#070D1A]'}`}>
+    <div className={`min-h-screen pb-28 text-white relative transition-colors duration-500 ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
       <button onClick={() => setShowSupport(true)} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl shadow-blue-900/50 hover:bg-blue-500 transition">
@@ -717,14 +737,14 @@ function HomePage() {
             <h3 className="mt-4 text-xl font-bold">Customer Care</h3>
             <p className="mt-2 text-sm text-slate-400">Welcome! Please contact us using the details below if you need assistance.</p>
             <div className="mt-6 space-y-3">
-              <a href="mailto:primeinvestors265@gmail.com" className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium hover:bg-slate-800"><Mail className="h-4 w-4 text-blue-400" /> primeinvestors265@gmail.com</a>
+              <a href="mailto:primevest180@gmail.com" className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium hover:bg-slate-800"><Mail className="h-4 w-4 text-blue-400" /> primevest180@gmail.com</a>
             </div>
             <button onClick={() => setShowSupport(false)} className="mt-6 w-full rounded-xl border border-white/10 py-3 text-sm font-semibold">Close</button>
           </div>
         </div>
       )}
 
-      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl transition-colors duration-500 ${isVip ? 'border-amber-500/20 bg-[#140F00]/95' : 'border-white/6 bg-[#070D1A]/95'}`}>
+      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl transition-colors duration-500 ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/6 bg-[#070D1A]/95"}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <h1 className="text-xl font-bold">Prime<span className={isVip ? "text-amber-400" : "text-blue-400"}>Vest</span></h1>
           <div className="flex items-center gap-2">
@@ -733,11 +753,10 @@ function HomePage() {
             </button>
             <button onClick={() => setShowNotifs(!showNotifs)} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition">
               <Bell size={18} />
-              {notifications.filter(n => !n.read).length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{notifications.filter(n => !n.read).length}</span>}
+              {notifications.filter((n) => !n.read).length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{notifications.filter((n) => !n.read).length}</span>}
             </button>
-            <div className={`relative h-10 w-10 rounded-full border overflow-hidden flex items-center justify-center ml-2 ${isVip ? 'border-amber-400/50 bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'border-blue-400/30 bg-blue-500/20'}`}>
+            <div className={`relative h-10 w-10 rounded-full border overflow-hidden flex items-center justify-center ml-2 ${isVip ? "border-amber-400/50 bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.3)]" : "border-blue-400/30 bg-blue-500/20"}`}>
               {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User size={16} className={isVip ? "text-amber-300" : "text-blue-300"} />}
-              
               {isVip && (
                 <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 shadow-sm">
                   <Crown size={12} className="text-black" />
@@ -755,8 +774,8 @@ function HomePage() {
             <button onClick={async () => { await api.markAllRead(); loadData(); }} className="text-xs text-blue-400">Mark all read</button>
           </div>
           <div className="p-2">
-            {notifications.length === 0 ? <p className="p-4 text-sm text-slate-500 text-center">No notifications yet.</p> : notifications.map(n => (
-              <div key={n.id} className={`p-3 border-b border-white/5 last:border-0 ${n.read ? 'opacity-50' : ''}`}>
+            {notifications.length === 0 ? <p className="p-4 text-sm text-slate-500 text-center">No notifications yet.</p> : notifications.map((n) => (
+              <div key={n.id} className={`p-3 border-b border-white/5 last:border-0 ${n.read ? "opacity-50" : ""}`}>
                 <p className="text-sm font-semibold">{n.title}</p>
                 <p className="text-xs text-slate-400 mt-1">{n.message}</p>
               </div>
@@ -771,22 +790,21 @@ function HomePage() {
             <p className="text-sm text-slate-400">Welcome back,</p>
             <h2 className="mt-1 text-2xl font-bold sm:text-3xl">{profile.name}</h2>
           </div>
-          {canClaimDaily && (
+          {canClaimDaily ? (
             <button onClick={handleClaimDaily} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold shadow-lg shadow-emerald-900/40 hover:bg-emerald-500">
               <Gift size={18} /> Claim ₦100
             </button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-slate-400 border border-slate-700">
+              <Timer size={18} /> Next claim: {timeLeft}
+            </div>
           )}
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
-          
-          <div className={`rounded-2xl border p-6 transition-all duration-500 ${
-            isVip 
-              ? 'border-amber-400/30 bg-gradient-to-br from-[#2A1D00] via-[#5C4300] to-[#8A6600] shadow-[0_0_30px_rgba(245,158,11,0.15)]' 
-              : 'border-blue-400/20 bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600'
-          }`}>
+          <div className={`rounded-2xl border p-6 transition-all duration-500 ${isVip ? "border-amber-400/30 bg-gradient-to-br from-[#2A1D00] via-[#5C4300] to-[#8A6600] shadow-[0_0_30px_rgba(245,158,11,0.15)]" : "border-blue-400/20 bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600"}`}>
             <div className="flex items-center justify-between">
-              <div className={`flex items-center gap-2 text-sm ${isVip ? 'text-amber-100' : 'text-blue-100'}`}>
+              <div className={`flex items-center gap-2 text-sm ${isVip ? "text-amber-100" : "text-blue-100"}`}>
                 <Wallet size={19} />Total Balance
                 {isVip && <Crown size={16} className="text-amber-400" />}
               </div>
@@ -794,27 +812,27 @@ function HomePage() {
                 {balanceVisible ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
             </div>
-            <h3 className={`mt-6 text-3xl font-bold sm:text-4xl ${isVip ? 'text-amber-50' : 'text-white'}`}>
+            <h3 className={`mt-6 text-3xl font-bold sm:text-4xl ${isVip ? "text-amber-50" : "text-white"}`}>
               {balanceVisible ? formatMoney(wallet.total + liveAccrual) : (isUsd ? "$ ••••" : "₦ ••••")}
             </h3>
-            <p className={`mt-3 text-sm ${isVip ? 'text-amber-200/80' : 'text-blue-100/80'}`}>
+            <p className={`mt-3 text-sm ${isVip ? "text-amber-200/80" : "text-blue-100/80"}`}>
               Available: {balanceVisible ? formatMoney(wallet.available) : (isUsd ? "$ •••" : "₦ •••")}
             </p>
             <div className="mt-8 grid grid-cols-2 gap-3">
-              <a href="/deposit" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? 'bg-amber-100 text-amber-950 hover:bg-white' : 'bg-white text-blue-900 hover:bg-blue-50'}`}><ArrowDownToLine size={18} />Deposit</a>
-              <a href="/withdraw" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${isVip ? 'border-amber-400/30 bg-amber-500/20 text-amber-50 hover:bg-amber-500/30' : 'border-white/30 bg-white/10 hover:bg-white/20'}`}><ArrowUpFromLine size={18} />Withdraw</a>
+              <a href="/deposit" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? "bg-amber-100 text-amber-950 hover:bg-white" : "bg-white text-blue-900 hover:bg-blue-50"}`}><ArrowDownToLine size={18} />Deposit</a>
+              <a href="/withdraw" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${isVip ? "border-amber-400/30 bg-amber-500/20 text-amber-50 hover:bg-amber-500/30" : "border-white/30 bg-white/10 hover:bg-white/20"}`}><ArrowUpFromLine size={18} />Withdraw</a>
             </div>
           </div>
-          
+
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10' : 'border-white/8'}`}>
-              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isVip ? 'bg-amber-500/10' : 'bg-blue-500/10'}`}>
-                <TrendingUp size={22} className={isVip ? 'text-amber-400' : 'text-blue-400'} />
+            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10" : "border-white/8"}`}>
+              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isVip ? "bg-amber-500/10" : "bg-blue-500/10"}`}>
+                <TrendingUp size={22} className={isVip ? "text-amber-400" : "text-blue-400"} />
               </div>
               <p className="mt-5 text-sm text-slate-400">Invested</p>
               <h3 className="mt-2 text-2xl font-bold">{balanceVisible ? formatMoney(wallet.invested) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
-            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10' : 'border-white/8'}`}>
+            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10" : "border-white/8"}`}>
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
                 <CircleDollarSign size={22} className="text-emerald-400" />
               </div>
@@ -827,48 +845,46 @@ function HomePage() {
         <section className="mt-9">
           <h3 className="mb-5 text-lg font-semibold">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <a href="/deposit" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-blue-500/40'}`}>
-              <Wallet size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-blue-400'}`} />
+            <a href="/deposit" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-blue-500/40"}`}>
+              <Wallet size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-blue-400"}`} />
               <h4 className="font-semibold">Deposit</h4>
             </a>
-            
             {profile.vip_tier === "None" ? (
               <a href="/vip" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 hover:border-red-500/40">
                 <LockIcon size={23} className="text-red-400 mb-2" />
                 <h4 className="font-semibold">Invest (Locked)</h4>
               </a>
             ) : (
-              <a href="/invest" className={`rounded-2xl border p-5 ${isVip ? 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60' : 'border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40'}`}>
-                <Unlock size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
+              <a href="/invest" className={`rounded-2xl border p-5 ${isVip ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60" : "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40"}`}>
+                <Unlock size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
                 <h4 className="font-semibold">Invest (Active)</h4>
               </a>
             )}
-
-            <a href="/bonus" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-emerald-500/40'}`}>
-              <Gamepad2 size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
+            <a href="/bonus" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-emerald-500/40"}`}>
+              <Gamepad2 size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
               <h4 className="font-semibold">Bonus Game</h4>
             </a>
-            <button onClick={() => setShowReferral(true)} className={`rounded-2xl border bg-[#0D1526] p-5 text-left ${isVip ? 'border-amber-500/10 hover:border-amber-500/40' : 'border-white/8 hover:border-emerald-500/40'}`}>
-              <Users size={23} className={`mb-2 ${isVip ? 'text-amber-400' : 'text-emerald-400'}`} />
+            <button onClick={() => setShowReferral(true)} className={`rounded-2xl border bg-[#0D1526] p-5 text-left ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-emerald-500/40"}`}>
+              <Users size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
               <h4 className="font-semibold">Refer & Earn</h4>
             </button>
           </div>
         </section>
 
         <section className="mt-9">
-          <div className={`rounded-2xl border bg-[#0D1526] p-6 ${isVip ? 'border-amber-500/10' : 'border-white/10'}`}>
+          <div className={`rounded-2xl border bg-[#0D1526] p-6 ${isVip ? "border-amber-500/10" : "border-white/10"}`}>
             <div className="flex items-center gap-3 mb-4">
-              <MessageSquare className={`h-6 w-6 ${isVip ? 'text-amber-400' : 'text-blue-400'}`} />
+              <MessageSquare className={`h-6 w-6 ${isVip ? "text-amber-400" : "text-blue-400"}`} />
               <h3 className="text-lg font-bold">Global Chat</h3>
             </div>
             <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
-              {messages.map(m => (
-                <div key={m.id} className={`flex gap-3 text-sm ${m.user === profile.name ? 'justify-end' : 'justify-start'}`}>
+              {messages.map((m) => (
+                <div key={m.id} className={`flex gap-3 text-sm ${m.user === profile.name ? "justify-end" : "justify-start"}`}>
                   {m.user !== profile.name && (
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold ${isVip ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>{m.user[0]}</div>
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold ${isVip ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>{m.user[0]}</div>
                   )}
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${m.user === profile.name ? (isVip ? 'bg-amber-600 text-white rounded-tr-sm' : 'bg-blue-600 text-white rounded-tr-sm') : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
-                    {m.user !== profile.name && <p className={`text-xs font-bold mb-1 ${isVip ? 'text-amber-400' : 'text-blue-400'}`}>{m.user}</p>}
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${m.user === profile.name ? (isVip ? "bg-amber-600 text-white rounded-tr-sm" : "bg-blue-600 text-white rounded-tr-sm") : "bg-slate-800 text-slate-200 rounded-tl-sm"}`}>
+                    {m.user !== profile.name && <p className={`text-xs font-bold mb-1 ${isVip ? "text-amber-400" : "text-blue-400"}`}>{m.user}</p>}
                     <p>{m.text}</p>
                     <p className="text-[10px] text-right mt-1 opacity-70">{m.time}</p>
                   </div>
@@ -877,14 +893,14 @@ function HomePage() {
             </div>
             <form onSubmit={sendMessage} className="mt-4 flex gap-2">
               <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Type a message..." className="flex-1 rounded-xl bg-slate-950 px-4 py-3 text-sm outline-none" />
-              <button type="submit" className={`rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}><Send size={18} /></button>
+              <button type="submit" className={`rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? "bg-amber-600 hover:bg-amber-500" : "bg-blue-600 hover:bg-blue-500"}`}><Send size={18} /></button>
             </form>
           </div>
         </section>
       </main>
 
       {showReferral && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 p-4" onMouseDown={(e) => e.target === e.currentTarget && setShowReferral(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onMouseDown={(e) => e.target === e.currentTarget && setShowReferral(false)}>
           <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0D1526] p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -893,18 +909,15 @@ function HomePage() {
               </div>
               <button onClick={() => setShowReferral(false)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><X size={20} /></button>
             </div>
-            
             <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/6 p-5">
               <p className="text-sm text-emerald-200">Reward for sharing your link</p>
               <p className="mt-2 text-3xl font-bold text-emerald-300">{formatMoney(1000)} <span className="text-sm font-normal text-emerald-500/70">(Per person)</span></p>
             </div>
-
             {shareMessage && (
               <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
                 <p className="font-bold text-emerald-400 text-sm">{shareMessage}</p>
               </div>
             )}
-
             <div className="mt-6">
               <input readOnly value={`${window.location.origin}/signup?ref=${profile.referral_code || ""}`} onFocus={(e) => e.target.select()} className="w-full rounded-xl border border-white/10 bg-[#070D1A] px-4 py-3 text-sm" />
               <div className="mt-3 flex gap-2">
@@ -920,9 +933,9 @@ function HomePage() {
         </div>
       )}
 
-      <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t px-2 py-2 backdrop-blur-xl transition-colors duration-500 ${isVip ? 'border-amber-500/20 bg-[#140F00]/95' : 'border-white/[0.07] bg-[#070D1A]/95'}`}>
+      <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t px-2 py-2 backdrop-blur-xl transition-colors duration-500 ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/[0.07] bg-[#070D1A]/95"}`}>
         <div className="mx-auto grid max-w-lg grid-cols-6">
-          <a href="/home" className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${isVip ? 'bg-amber-500/10 text-amber-400' : 'bg-blue-500/10 text-blue-400'}`}><HomeIcon size={20} />Home</a>
+          <a href="/home" className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${isVip ? "bg-amber-500/10 text-amber-400" : "bg-blue-500/10 text-blue-400"}`}><HomeIcon size={20} />Home</a>
           <a href="/invest" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><TrendingUp size={20} />Invest</a>
           <a href="/vip" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Crown size={20} />VIP</a>
           <a href="/bonus" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Gamepad2 size={20} />Bonus</a>
@@ -945,9 +958,7 @@ function AdminDashboard() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    loadWithdrawals();
-  }, []);
+  useEffect(() => { loadWithdrawals(); }, []);
 
   const handleApprove = async (w) => {
     if (!window.confirm(`Approve ₦${w.amount.toLocaleString()} to ${w.account_name} (${w.bank_name})?`)) return;
