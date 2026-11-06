@@ -519,20 +519,31 @@ export function Invest() {
   async function submit() {
     setError("");
     if (profile.vip_tier === "None") return setError("You must upgrade to VIP before investing.");
+    
     const n = Number(amount);
-    if (!n || n < (selected?.min_amount || 3000)) return setError(`Minimum is ₦${(selected?.min_amount || 3000).toLocaleString()}`);
+    const minAmt = selected?.min_amount || 3000;
+
+    if (!n || n < minAmt) {
+      return setError(`Minimum investment is ₦${minAmt.toLocaleString()}.`);
+    }
+
     setSubmitting(true);
     let matured_at = null;
     if (selected.name === "Crypto Index") {
       const days = cryptoPeriod === "30 Days" ? 30 : cryptoPeriod === "3 Months" ? 90 : cryptoPeriod === "6 Months" ? 180 : 365;
       matured_at = new Date(new Date().getTime() + days * 24 * 60 * 60 * 1000).toISOString();
     }
+    
     const r = await api.invest(selected.id, n, 0, matured_at);
+    
     setSubmitting(false);
+    
     if (r?.success) {
       if (selected.name === "Real Estate") setPopup("Your money will grow in the next 4 weeks");
       else window.location.href = "/portfolio";
-    } else setError(r?.error || "Failed");
+    } else {
+      setError(r?.error || "Failed to process investment.");
+    }
   }
 
   return (

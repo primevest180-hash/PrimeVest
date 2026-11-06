@@ -115,7 +115,12 @@ export const api = {
     return { success: true };
   },
   
-  invest: (plan_id, amount, daily_profit, matured_at) => call("index/invest", { plan_id, amount, daily_profit, matured_at }),
+  // FIXED: Now passes the email to the backend
+  invest: async (plan_id, amount, daily_profit, matured_at) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    return call("index/invest", { plan_id, amount, daily_profit, matured_at, email: user.email });
+  },
+  
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("investments").update({ last_daily_claim: new Date().toISOString() }).eq("id", investment_id);
