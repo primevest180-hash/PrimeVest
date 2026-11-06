@@ -585,7 +585,7 @@ export function BonusGame() {
   );
 }
 
-/* =========================== INVEST =========================== */
+/* =========================== INVEST (Strict 1 per day) =========================== */
 
 export function Invest() {
   const [plans, setPlans] = useState([]);
@@ -597,16 +597,39 @@ export function Invest() {
   const [popup, setPopup] = useState(null);
   const [profile, setProfile] = useState({ vip_tier: "None" });
   const [wallet, setWallet] = useState({ available: 0 });
+  const [recentInvestment, setRecentInvestment] = useState(null);
+
+  const estateImages = [
+    { name: "Standard Estate", img: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&fit=crop&q=80&w=600", rate: 8 },
+    { name: "Classic Duplex", img: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=600", rate: 10 },
+    { name: "Modern Villa", img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=600", rate: 12 },
+    { name: "Luxury Mansion", img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&q=80&w=600", rate: 15 },
+    { name: "Oceanfront Villa", img: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&q=80&w=600", rate: 18 },
+    { name: "Prime Commercial Tower", img: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600", rate: 22 },
+  ];
 
   useEffect(() => {
     api.plans().then(({ data }) => setPlans(data || []));
     api.profile().then(({ data }) => data && setProfile(data));
     api.wallet().then(({ data }) => data && setWallet(data));
+    
+    // ✅ Strict 1 per day check
+    api.portfolio().then(({ data }) => {
+      if (data && data.length > 0) {
+        const recent = data.find(inv => {
+          const timeDiff = Date.now() - new Date(inv.started_at).getTime();
+          return timeDiff < 86400000; // Less than 24 hours
+        });
+        if (recent) setRecentInvestment(recent);
+      }
+    });
   }, []);
 
   async function submit() {
     setError("");
     if (profile.vip_tier === "None") return setError("You must upgrade to VIP before investing.");
+    if (recentInvestment) return setError(`You can only invest once per day. Your last investment was on ${new Date(recentInvestment.started_at).toLocaleDateString()}.`);
+
     const n = Number(amount);
     const minAmt = selected?.min_amount || 3000;
     
@@ -646,19 +669,27 @@ export function Invest() {
           </div>
         )}
 
+        {/* ✅ 1 per day warning */}
+        {recentInvestment && (
+          <div className="mb-8 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-300">
+            <p className="font-bold">Daily Limit Reached</p>
+            <p className="text-sm mt-1">You can only invest once per day. You invested on {new Date(recentInvestment.started_at).toLocaleString()}.</p>
+          </div>
+        )}
+
         <div className="grid gap-5 md:grid-cols-2">
           {plans.map((p) => (
-            <div key={p.id} className={`rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col relative overflow-hidden ${profile.vip_tier === "None" ? "opacity-60" : ""}`}>
-              {profile.vip_tier === "None" && (
+            <div key={p.id} className={`rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col relative overflow-hidden ${profile.vip_tier === "None" || recentInvestment ? "opacity-60" : ""}`}>
+              {(profile.vip_tier === "None" || recentInvestment) && (
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10 flex items-center justify-center">
-                  <span className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><LockIcon size={16} /> VIP Required</span>
+                  <span className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><LockIcon size={16} /> {recentInvestment ? "1 Per Day Limit" : "VIP Required"}</span>
                 </div>
               )}
               <h3 className="text-xl font-bold">{p.name}</h3>
               <p className="text-sm text-slate-400 mt-1">{p.type}</p>
               <p className="text-sm mt-3">Return: <span className="font-semibold text-blue-400">{p.expected_return}%</span></p>
               <p className="text-xs text-slate-500 mt-1">Min: ₦{Number(p.min_amount).toLocaleString()}</p>
-              <button onClick={() => { if (profile.vip_tier !== "None") { setSelected(p); setAmount(""); setError(""); } }} disabled={profile.vip_tier === "None"} className="mt-6 rounded-xl bg-blue-600 py-3 text-sm font-semibold w-full disabled:bg-slate-800">Select Plan</button>
+              <button onClick={() => { if (profile.vip_tier !== "None" && !recentInvestment) { setSelected(p); setAmount(""); setError(""); } }} disabled={profile.vip_tier === "None" || !!recentInvestment} className="mt-6 rounded-xl bg-blue-600 py-3 text-sm font-semibold w-full disabled:bg-slate-800">Select Plan</button>
             </div>
           ))}
         </div>
@@ -700,7 +731,8 @@ export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
   const [history, setHistory] = useState([]);
   const [activeTab, setActiveTab] = useState("portfolio");
-  const [claiming, setClaiming] = useState(null);
+  const [claiming, setClaiming] = useState(null); 
+  const [claimed, setClaimed] = useState({}); 
   const [toastMsg, setToastMsg] = useState("");
   const [, setTick] = useState(0);
 
@@ -730,10 +762,20 @@ export function Portfolio() {
   };
 
   async function handleClaim(h) {
-    const canClaim = !h.last_daily_claim || Date.now() - new Date(h.last_daily_claim).getTime() >= 86400000;
-    if (!canClaim) { setToastMsg("You must wait 24 hours between claims."); return; }
+    if (claimed[h.id]) {
+      setToastMsg("You must wait exactly 24 hours between claims.");
+      return;
+    }
 
+    const canClaim = !h.last_daily_claim || Date.now() - new Date(h.last_daily_claim).getTime() >= 86400000;
+    if (!canClaim) { 
+      setToastMsg("You must wait exactly 24 hours between claims."); 
+      return; 
+    }
+
+    setClaimed(prev => ({ ...prev, [h.id]: true }));
     setClaiming(h.id);
+
     const dailyProfit = h.amount * (h.plans.expected_return / 100);
     const r = await api.claimInvestment(h.id, dailyProfit);
     
@@ -742,6 +784,7 @@ export function Portfolio() {
       setToastMsg(`You have successfully claimed ${fmt(dailyProfit)}!`);
     } else {
       setToastMsg(r?.error || "Failed to claim. Please try again.");
+      setClaimed(prev => ({ ...prev, [h.id]: false }));
     }
     setClaiming(null);
   }
@@ -761,8 +804,10 @@ export function Portfolio() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {holdings.map((h) => {
             const timeLeft = getTimeLeft(h.last_daily_claim);
-            const canClaim = !timeLeft;
+            const isLocallyClaimed = claimed[h.id];
+            const canClaim = !timeLeft && !isLocallyClaimed;
             const dailyProfit = h.amount * (h.plans.expected_return / 100);
+
             return (
               <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col justify-between">
                 <div>
@@ -772,12 +817,16 @@ export function Portfolio() {
                 </div>
                 {h.status === "active" && (
                   <div className="mt-4">
-                    {!canClaim && (
+                    {(!canClaim) && (
                       <p className="text-center text-xs text-amber-400 font-mono mb-2 flex items-center justify-center gap-1">
-                        <Timer size={14} /> Next claim in: {timeLeft}
+                        <Timer size={14} /> Next claim in: {timeLeft || "24h 0m 0s"}
                       </p>
                     )}
-                    <button onClick={() => handleClaim(h)} disabled={!canClaim || claiming === h.id} className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}>
+                    <button 
+                      onClick={() => handleClaim(h)} 
+                      disabled={!canClaim || claiming === h.id} 
+                      className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}
+                    >
                       {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${fmt(dailyProfit)}` : "Wait for timer"}
                     </button>
                   </div>

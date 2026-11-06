@@ -109,11 +109,9 @@ export const api = {
   },
   depositInit: (amount, method, email, vip) => call("index", { action: "deposit", amount, method, email, vip }),
   
-  // ✅ FIXED WITHDRAW: Bypasses Edge Function entirely. Writes straight to DB.
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
     
-    // 1. Save the request to the "withdrawals" table for Admin
     const { error } = await supabase.from("withdrawals").insert({
       user_id: user.id,
       amount: p.amount,
@@ -129,7 +127,6 @@ export const api = {
       return { success: false, error: "Failed to save withdrawal request." };
     }
 
-    // 2. Log the pending transaction for the user
     await supabase.from("transactions").insert({
       user_id: user.id, 
       type: "withdraw", 
@@ -139,7 +136,6 @@ export const api = {
       created_at: new Date().toISOString()
     });
 
-    // 3. Send email to admin
     await sendWithdrawalEmail(user, p); 
     
     return { success: true };
@@ -714,11 +710,12 @@ function HomePage() {
 
   const actualInvested = investments.filter(i => i.status === "active").reduce((sum, inv) => sum + Number(inv.amount), 0);
 
+  // ✅ FIXED: Exactly 1 Kobo (0.01) every 5 seconds
   let liveAccrual = 0;
   investments.forEach(inv => {
     if (inv.status === "active") {
       const secondsElapsed = Math.max(0, (Date.now() - new Date(inv.started_at).getTime()) / 1000);
-      const perSecond = 0.002; // 1 Kobo every 5 seconds
+      const perSecond = 0.002; 
       liveAccrual += (perSecond * secondsElapsed);
     }
   });
