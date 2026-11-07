@@ -710,16 +710,6 @@ function HomePage() {
 
   const actualInvested = investments.filter(i => i.status === "active").reduce((sum, inv) => sum + Number(inv.amount), 0);
 
-  // ✅ FIXED: Exactly 1 Kobo (0.01) every 5 seconds
-  let liveAccrual = 0;
-  investments.forEach(inv => {
-    if (inv.status === "active") {
-      const secondsElapsed = Math.max(0, (Date.now() - new Date(inv.started_at).getTime()) / 1000);
-      const perSecond = 0.002; 
-      liveAccrual += (perSecond * secondsElapsed);
-    }
-  });
-
   const now = new Date();
   const canClaimDaily = !profile.last_login_claim || (now.getTime() - new Date(profile.last_login_claim).getTime()) >= 86400000;
 
@@ -837,7 +827,7 @@ function HomePage() {
               </button>
             </div>
             <h3 className={`mt-6 text-3xl font-bold sm:text-4xl ${isVip ? "text-amber-50" : "text-white"}`}>
-              {balanceVisible ? formatMoney(wallet.total + liveAccrual) : (isUsd ? "$ ••••" : "₦ ••••")}
+              {balanceVisible ? formatMoney(wallet.total) : (isUsd ? "$ ••••" : "₦ ••••")}
             </h3>
             <p className={`mt-3 text-sm ${isVip ? "text-amber-200/80" : "text-blue-100/80"}`}>
               Available: {balanceVisible ? formatMoney(wallet.available) : (isUsd ? "$ •••" : "₦ •••")}
@@ -860,8 +850,8 @@ function HomePage() {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
                 <CircleDollarSign size={22} className="text-emerald-400" />
               </div>
-              <p className="mt-5 text-sm text-slate-400">Total Earnings {investments.length > 0 && <span className="text-emerald-400 text-xs ml-2 animate-pulse">● Live</span>}</p>
-              <h3 className="mt-2 text-2xl font-bold text-emerald-400">{balanceVisible ? formatMoney(wallet.earnings + liveAccrual) : (isUsd ? "$ •••" : "₦ •••")}</h3>
+              <p className="mt-5 text-sm text-slate-400">Total Earnings</p>
+              <h3 className="mt-2 text-2xl font-bold text-emerald-400">{balanceVisible ? formatMoney(wallet.earnings) : (isUsd ? "$ •••" : "₦ •••")}</h3>
             </div>
           </div>
         </section>

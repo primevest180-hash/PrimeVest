@@ -190,7 +190,7 @@ export function DepositBitcoin() {
   );
 }
 
-/* =========================== WITHDRAW =========================== */
+/* =========================== WITHDRAW (New Limits & Validation) =========================== */
 
 export function Withdraw() {
   const [amount, setAmount] = useState("");
@@ -200,8 +200,8 @@ export function Withdraw() {
 
   const next = () => {
     const n = Number(amount);
-    if (!n || n < 5000) return setError("Minimum withdrawal is ₦5,000.");
-    if (n > 20000) return setError("Max ₦20,000.");
+    if (!n || n < 14500) return setError("Minimum withdrawal is ₦14,500.");
+    if (n > 50000) return setError("Maximum withdrawal is ₦50,000.");
     if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
     window.location.href = `/withdraw/account?amount=${n}`;
   };
@@ -220,10 +220,10 @@ export function Withdraw() {
           <p className="mt-1 text-2xl font-bold text-blue-400">₦{balance.toLocaleString()}</p>
         </div>
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <label className="mb-2 block text-sm">Amount (Min ₦5,000)</label>
+          <label className="mb-2 block text-sm">Amount (Min ₦14,500 - Max ₦50,000)</label>
           <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
             <span className="flex items-center px-4 text-slate-400">₦</span>
-            <input value={amount} onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }} placeholder="5,000" className="w-full bg-transparent px-2 py-4 outline-none" />
+            <input value={amount} onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }} placeholder="14,500" className="w-full bg-transparent px-2 py-4 outline-none" />
           </div>
           {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
           <button onClick={next} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
@@ -232,6 +232,14 @@ export function Withdraw() {
     </div>
   );
 }
+
+const NIGERIAN_BANKS = [
+  "Access Bank", "Citibank", "Ecobank", "Fidelity Bank", "First Bank", "First City Monument Bank (FCMB)", 
+  "Globus Bank", "Guaranty Trust Bank (GTB)", "Heritage Bank", "Jaiz Bank", "Keystone Bank", "Lotus Bank", 
+  "Parallex Bank", "Polaris Bank", "Premium Trust Bank", "Providus Bank", "Stanbic IBTC Bank", "Standard Chartered", 
+  "Sterling Bank", "SunTrust Bank", "Union Bank", "United Bank for Africa (UBA)", "Unity Bank", "Wema Bank", "Zenith Bank", 
+  "Opay", "Palmpay", "Moniepoint", "Kuda", "PocketApp", "Carbon", "VFD Microfinance Bank"
+];
 
 export function WithdrawAccount() {
   const [bankName, setBankName] = useState("");
@@ -247,6 +255,17 @@ export function WithdrawAccount() {
 
   async function proceed() {
     if (!bankName || !accountNumber || !accountName) return setError("Please fill in all fields.");
+    
+    const isValidBank = NIGERIAN_BANKS.some(b => b.toLowerCase().includes(bankName.toLowerCase()) || bankName.toLowerCase().includes(b.toLowerCase()));
+    if (!isValidBank) return setError("Bank not recognized. Please use a valid Nigerian bank.");
+    
+    if (accountNumber.length !== 10) return setError("Account number must be exactly 10 digits.");
+    
+    const nameParts = accountName.trim().split(" ");
+    if (nameParts.length < 2 || !/^[a-zA-Z\s]+$/.test(accountName)) {
+      return setError("Please enter your full legal name (First and Last name).");
+    }
+
     setSubmitting(true);
     setError("");
 
@@ -287,7 +306,7 @@ export function WithdrawAccount() {
           </div>
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium">Account Name</label>
-            <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Your full name" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
+            <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Full Name" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
           </div>
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
           <button onClick={proceed} disabled={submitting} className="w-full rounded-xl bg-emerald-600 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
@@ -484,16 +503,42 @@ export function BonusGame() {
   const [claiming, setClaiming] = useState(false);
   const [clickSpeed, setClickSpeed] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
+  const [emojis, setEmojis] = useState([]);
   const clicks = useRef([]);
   const moneyValue = Math.floor(points / 2);
   const goal = 1000;
 
-  const handleTap = () => {
+  const handleTap = (e) => {
     setPoints((p) => p + 1);
     const now = Date.now();
     clicks.current.push(now);
     clicks.current = clicks.current.filter((t) => now - t < 1000);
-    setClickSpeed(clicks.current.length);
+    const currentSpeed = clicks.current.length;
+    setClickSpeed(currentSpeed);
+
+    // Spawn floating emojis randomly across the screen
+    if (currentSpeed >= 4 && Math.random() > 0.3) {
+      const emojiList = ["😂", "🤣", "💨", "😮", "🔥"];
+      const randomEmoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+      
+      const rect = e.target.getBoundingClientRect();
+      const x = rect.left + Math.random() * rect.width;
+      const y = rect.top + Math.random() * rect.height;
+
+      const newEmoji = {
+        id: Date.now() + Math.random(),
+        emoji: randomEmoji,
+        x,
+        y,
+        size: 40 + Math.random() * 40,
+      };
+
+      setEmojis((prev) => [...prev, newEmoji]);
+
+      setTimeout(() => {
+        setEmojis((prev) => prev.filter((item) => item.id !== newEmoji.id));
+      }, 1500);
+    }
   };
 
   const handleClaim = async () => {
@@ -518,23 +563,26 @@ export function BonusGame() {
   const speedPercentage = Math.min(clickSpeed / maxSpeed, 1);
   const rotation = -85 + speedPercentage * 170;
 
-  const getSpeedReaction = () => {
-    if (clickSpeed >= 8) return <span className="text-6xl font-bold text-emerald-400 animate-bounce drop-shadow-[0_0_15px_rgba(52,211,153,0.8)] absolute top-10 left-10">🎉</span>;
-    if (clickSpeed === 7) return <span className="text-5xl font-black text-amber-400 absolute top-20 right-10">U can do better!</span>;
-    if (clickSpeed === 6) return <><span className="text-7xl absolute top-1/4 left-1/4 animate-bounce">🤣</span><span className="text-7xl absolute bottom-1/4 right-1/4 animate-bounce">🤣</span></>;
-    if (clickSpeed === 5) return <><span className="text-6xl absolute top-10 right-10 animate-ping">💨</span><span className="text-6xl absolute bottom-20 left-10 animate-ping">💨</span></>;
-    if (clickSpeed === 4) return <span className="text-6xl absolute top-20 left-20 animate-pulse">💨</span>;
-    if (clickSpeed === 3) return <span className="text-6xl absolute top-10 left-10">😮</span>;
-    if (clickSpeed >= 1) return <><span className="text-6xl absolute top-10 left-10 animate-bounce">😂</span><span className="text-6xl absolute bottom-20 right-10 animate-bounce">😂</span></>;
-    return null;
-  };
-
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
-      <div className="absolute inset-0 pointer-events-none z-50">
-        {getSpeedReaction()}
+      {/* Floating Emojis Absolute Container */}
+      <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+        {emojis.map((e) => (
+          <span
+            key={e.id}
+            className="absolute animate-float-up"
+            style={{
+              left: e.x,
+              top: e.y,
+              fontSize: e.size,
+              animation: "floatUp 1.5s ease-out forwards",
+            }}
+          >
+            {e.emoji}
+          </span>
+        ))}
       </div>
 
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
@@ -571,21 +619,17 @@ export function BonusGame() {
         </button>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/[0.07] bg-[#070D1A]/95 px-2 py-2 backdrop-blur-xl">
-        <div className="mx-auto grid max-w-lg grid-cols-6">
-          <a href="/home" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><HomeIcon size={20} />Home</a>
-          <a href="/invest" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><TrendingUp size={20} />Invest</a>
-          <a href="/vip" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Crown size={20} />VIP</a>
-          <a href="/bonus" className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl bg-blue-500/10 text-xs font-semibold text-blue-400"><Gamepad2 size={20} />Bonus</a>
-          <a href="/withdraw" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><ArrowUpFromLine size={20} />Withdraw</a>
-          <a href="/settings" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><SettingsIcon size={20} />Settings</a>
-        </div>
-      </nav>
+      <style>{`
+        @keyframes floatUp {
+          0% { transform: translateY(0) scale(1); opacity: 1; }
+          100% { transform: translateY(-150px) scale(1.5); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
 
-/* =========================== INVEST (Strict 1 per day) =========================== */
+/* =========================== INVEST =========================== */
 
 export function Invest() {
   const [plans, setPlans] = useState([]);
@@ -613,12 +657,11 @@ export function Invest() {
     api.profile().then(({ data }) => data && setProfile(data));
     api.wallet().then(({ data }) => data && setWallet(data));
     
-    // ✅ Strict 1 per day check
     api.portfolio().then(({ data }) => {
       if (data && data.length > 0) {
         const recent = data.find(inv => {
           const timeDiff = Date.now() - new Date(inv.started_at).getTime();
-          return timeDiff < 86400000; // Less than 24 hours
+          return timeDiff < 86400000; 
         });
         if (recent) setRecentInvestment(recent);
       }
@@ -669,7 +712,6 @@ export function Invest() {
           </div>
         )}
 
-        {/* ✅ 1 per day warning */}
         {recentInvestment && (
           <div className="mb-8 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-300">
             <p className="font-bold">Daily Limit Reached</p>
@@ -725,7 +767,7 @@ export function Invest() {
   );
 }
 
-/* =========================== PORTFOLIO =========================== */
+/* =========================== PORTFOLIO (Plan-specific returns) =========================== */
 
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
@@ -776,12 +818,23 @@ export function Portfolio() {
     setClaimed(prev => ({ ...prev, [h.id]: true }));
     setClaiming(h.id);
 
-    const dailyProfit = h.amount * (h.plans.expected_return / 100);
-    const r = await api.claimInvestment(h.id, dailyProfit);
+    // ✅ CUSTOM CLAIM LOGIC BASED ON PLAN
+    let claimAmount = 0;
+    const planName = h.plans?.name || "";
+    
+    if (planName.includes("Affiliate")) {
+      claimAmount = Math.floor(Math.random() * (2000 - 500 + 1) + 500); // ₦500 to ₦2,000
+    } else {
+      // For Growth, Real Estate, Crypto: Return % of amount
+      const percentage = h.plans.expected_return / 100;
+      claimAmount = h.amount * percentage;
+    }
+
+    const r = await api.claimInvestment(h.id, claimAmount);
     
     if (r?.success) {
       await load();
-      setToastMsg(`You have successfully claimed ${fmt(dailyProfit)}!`);
+      setToastMsg(`You have successfully claimed ${fmt(claimAmount)}!`);
     } else {
       setToastMsg(r?.error || "Failed to claim. Please try again.");
       setClaimed(prev => ({ ...prev, [h.id]: false }));
@@ -806,7 +859,14 @@ export function Portfolio() {
             const timeLeft = getTimeLeft(h.last_daily_claim);
             const isLocallyClaimed = claimed[h.id];
             const canClaim = !timeLeft && !isLocallyClaimed;
-            const dailyProfit = h.amount * (h.plans.expected_return / 100);
+            
+            let displayProfit = 0;
+            const planName = h.plans?.name || "";
+            if (planName.includes("Affiliate")) {
+               displayProfit = 500; // Just to show something in the UI
+            } else {
+               displayProfit = h.amount * (h.plans.expected_return / 100);
+            }
 
             return (
               <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col justify-between">
@@ -827,7 +887,7 @@ export function Portfolio() {
                       disabled={!canClaim || claiming === h.id} 
                       className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}
                     >
-                      {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${fmt(dailyProfit)}` : "Wait for timer"}
+                      {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${planName.includes("Affiliate") ? "Bonus" : fmt(displayProfit)}` : "Wait for timer"}
                     </button>
                   </div>
                 )}
