@@ -8,7 +8,7 @@ import {
   Settings as SettingsIcon, LogOut, X, Info, ArrowLeft, CreditCard, LockKeyhole, AlertCircle,
   Building2, Bitcoin, PiggyBank, BarChart3, PieChart, Search, XCircle, Loader2, ThumbsUp,
   Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
-  Rocket, Timer, Zap, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
+  Rocket, Timer, Zap, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw, Ban
 } from "lucide-react";
 import Terms from "./terms";
 import {
@@ -17,7 +17,6 @@ import {
   Portfolio, Settings, Help
 } from "./pages";
 
-// ✅ EXPORT: supabase
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -54,6 +53,25 @@ async function notifyAdmin(name, email, type = "New Signup", extra = "") {
   }
 }
 
+// ✅ LOGIN ALERT & WITHDRAWAL EMAIL
+async function sendLoginAlert(email, device) {
+  try {
+    await fetch("https://api.web3forms.com/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_key: import.meta.env.VITE_WEB3FORMS_KEY,
+        subject: `🚨 New Login to PrimeVest`,
+        from_name: "PrimeVest Security",
+        to: email,
+        message: `Security Alert\n\nA new login was detected on your account.\nDevice: ${device}\nIf this wasn't you, please reset your password immediately.`,
+      }),
+    });
+  } catch (err) {
+    console.error("Login alert failed", err);
+  }
+}
+
 async function sendWithdrawalEmail(user, p) {
   try {
     await fetch("https://api.web3forms.com/submit", {
@@ -65,7 +83,7 @@ async function sendWithdrawalEmail(user, p) {
         from_name: "PrimeVest Withdrawals",
         replyto: user.email,
         to: "primevest180@gmail.com",
-        message: `WITHDRAWAL REQUEST\n\nUser: ${user.email}\nAmount: ₦${Number(p.amount).toLocaleString()}\nBank: ${p.bank_name}\nAccount No: ${p.account_number}\nAccount Name: ${p.account_name}\n\nLog in to /admin to approve or reject.`,
+        message: `WITHDRAWAL REQUEST\n\nUser: ${user.email}\nAmount: ₦${Number(p.amount).toLocaleString()}\nBank: ${p.bank_name}\nAccount No: ${p.account_number}\nAccount Name: ${p.account_name}\n\nLog in to /av to approve or reject.`,
       }),
     });
   } catch (err) {
@@ -73,7 +91,6 @@ async function sendWithdrawalEmail(user, p) {
   }
 }
 
-// ✅ EXPORT: api
 export const api = {
   signup: async (name, email, password, ref) => {
     const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
@@ -81,7 +98,14 @@ export const api = {
     if (!res.error) notifyAdmin(finalName, email, "New User Signup");
     return res;
   },
-  login: (email, password) => supabase.auth.signInWithPassword({ email, password }),
+  login: async (email, password) => {
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    if (!res.error) {
+      const device = navigator.userAgent;
+      sendLoginAlert(email, device);
+    }
+    return res;
+  },
   logout: () => supabase.auth.signOut(),
   wallet: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -236,6 +260,30 @@ export const api = {
     return data.publicUrl;
   },
 
+  // ✅ ADMIN ANALYTICS & FREEZE
+  getAdminStats: async () => {
+    const { count: usersCount } = await supabase.from("profiles").select("*", { count: 'exact', head: true });
+    const { data: withdrawals } = await supabase.from("withdrawals").select("amount, status");
+    
+    let totalWithdrawn = 0;
+    let pendingWithdrawals = 0;
+    
+    withdrawals?.forEach(w => {
+      if (w.status === "success") totalWithdrawn += w.amount;
+      if (w.status === "pending") pendingWithdrawals += w.amount;
+    });
+
+    return { usersCount, totalWithdrawn, pendingWithdrawals };
+  },
+  
+  getAllUsers: async () => supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+  
+  toggleUserFreeze: async (userId, currentStatus) => {
+    const newStatus = currentStatus === "frozen" ? "active" : "frozen";
+    await supabase.from("profiles").update({ account_status: newStatus }).eq("id", userId);
+    return { success: true };
+  },
+
   getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
   
   approveWithdrawal: async (withdrawalId, user_id, amount) => {
@@ -290,12 +338,36 @@ const Toast = ({ message, onClose }) => {
 function ProtectedRoute() {
   const [loading, setLoading] = useState(true);
   const [authed, setAuthed] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
+  
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setAuthed(!!data.session); setLoading(false); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setAuthed(!!s));
+    supabase.auth.getSession().then(async ({ data }) => { 
+      if (data.session) {
+        setAuthed(true);
+        const { data: profile } = await supabase.from("profiles").select("account_status").eq("id", data.session.user.id).single();
+        if (profile?.account_status === "frozen") setIsFrozen(true);
+      }
+      setLoading(false); 
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setAuthed(!!s);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
+
   if (loading) return <LoadingScreen />;
+  
+  if (isFrozen) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center">
+        <Ban size={64} className="text-red-500 mb-4" />
+        <h1 className="text-2xl font-bold text-white mb-2">Account Frozen</h1>
+        <p className="text-slate-400 mb-6">Your account has been temporarily frozen by the administrator. Please contact support.</p>
+        <button onClick={() => { supabase.auth.signOut(); window.location.href = "/"; }} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Log Out</button>
+      </div>
+    );
+  }
+
   if (!authed) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
@@ -681,6 +753,34 @@ function HomePage() {
     return () => clearInterval(interval);
   }, [loadData]);
 
+  // ✅ REAL-TIME PUSH NOTIFICATIONS
+  useEffect(() => {
+    let subscription;
+    const setupRealtime = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      subscription = supabase
+        .channel('public:notifications')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            const newNotif = payload.new;
+            setToastMsg(`${newNotif.title}: ${newNotif.message}`);
+            loadData();
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime();
+
+    return () => {
+      if (subscription) supabase.removeChannel(subscription);
+    };
+  }, [loadData]);
+
   useEffect(() => {
     if (!profile.last_login_claim) { setTimeLeft(""); return; }
     const tick = () => {
@@ -963,24 +1063,44 @@ function HomePage() {
   );
 }
 
+// ✅ SECURE ADMIN PANEL (/av)
 function AdminDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
   const [withdrawals, setWithdrawals] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(null);
+  const [activeTab, setActiveTab] = useState("withdrawals"); // withdrawals | users
 
-  const loadWithdrawals = async () => {
-    const { data } = await api.getAdminWithdrawals();
-    setWithdrawals(data || []);
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (password === "2468") {
+      setIsAuthenticated(true);
+      loadData();
+    } else {
+      setError("Incorrect password");
+    }
+  };
+
+  const loadData = async () => {
+    const { data: w } = await api.getAdminWithdrawals();
+    const { data: u } = await api.getAllUsers();
+    const s = await api.getAdminStats();
+    setWithdrawals(w || []);
+    setUsers(u || []);
+    setStats(s);
     setLoading(false);
   };
 
-  useEffect(() => { loadWithdrawals(); }, []);
-
   const handleApprove = async (w) => {
-    if (!window.confirm(`Approve ₦${w.amount.toLocaleString()} to ${w.account_name} (${w.bank_name})?`)) return;
+    if (!window.confirm(`Approve ₦${w.amount.toLocaleString()} to ${w.account_name}?`)) return;
     setProcessing(w.id);
     await api.approveWithdrawal(w.id, w.user_id, w.amount);
-    await loadWithdrawals();
+    await loadData();
     setProcessing(null);
   };
 
@@ -988,53 +1108,121 @@ function AdminDashboard() {
     if (!window.confirm(`Reject withdrawal and refund ₦${w.amount.toLocaleString()}?`)) return;
     setProcessing(w.id);
     await api.rejectWithdrawal(w.id, w.user_id, w.amount);
-    await loadWithdrawals();
+    await loadData();
     setProcessing(null);
   };
+
+  const handleFreeze = async (u) => {
+    if (!window.confirm(`Are you sure you want to toggle the freeze status for ${u.name}?`)) return;
+    await api.toggleUserFreeze(u.id, u.account_status);
+    await loadData();
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#070D1A] flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-8 text-center shadow-2xl">
+          <LockIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-white mb-6">Admin Access</h1>
+          <input 
+            type="password" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+            placeholder="Enter Password" 
+            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-center text-white outline-none mb-4"
+          />
+          {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+          <button type="submit" className="w-full rounded-xl bg-amber-600 py-3 font-bold text-black hover:bg-amber-500">Login</button>
+        </form>
+      </div>
+    );
+  }
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen bg-[#070D1A] p-6 text-white">
-      <div className="mx-auto max-w-5xl">
+    <div className="min-h-screen bg-[#070D1A] p-6 text-white pb-20">
+      <div className="mx-auto max-w-6xl">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Admin Panel</h1>
-            <p className="text-slate-400 mt-1">Manage pending withdrawals</p>
+            <h1 className="text-3xl font-bold text-amber-500">Admin Panel</h1>
+            <p className="text-slate-400 mt-1">Manage platform and users</p>
           </div>
           <button onClick={() => window.location.href = "/home"} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 hover:bg-white/10">Back to App</button>
         </div>
 
-        {withdrawals.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-10 text-center">
-            <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold">All caught up!</h2>
-            <p className="text-slate-400">No pending withdrawals at the moment.</p>
+        {/* ANALYTICS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="rounded-2xl border border-blue-500/20 bg-[#0D1526] p-5">
+            <p className="text-slate-400 text-sm">Total Users</p>
+            <p className="text-3xl font-bold text-white mt-2">{stats.usersCount}</p>
           </div>
-        ) : (
+          <div className="rounded-2xl border border-emerald-500/20 bg-[#0D1526] p-5">
+            <p className="text-slate-400 text-sm">Total Withdrawn</p>
+            <p className="text-3xl font-bold text-emerald-400 mt-2">₦{stats.totalWithdrawn.toLocaleString()}</p>
+          </div>
+          <div className="rounded-2xl border border-amber-500/20 bg-[#0D1526] p-5">
+            <p className="text-slate-400 text-sm">Pending Withdrawals</p>
+            <p className="text-3xl font-bold text-amber-400 mt-2">₦{stats.pendingWithdrawals.toLocaleString()}</p>
+          </div>
+        </div>
+
+        {/* TABS */}
+        <div className="flex gap-4 border-b border-white/10 mb-6">
+          <button onClick={() => setActiveTab("withdrawals")} className={`pb-2 text-sm font-semibold ${activeTab === "withdrawals" ? "text-amber-400 border-b-2 border-amber-400" : "text-slate-400"}`}>Withdrawals</button>
+          <button onClick={() => setActiveTab("users")} className={`pb-2 text-sm font-semibold ${activeTab === "users" ? "text-amber-400 border-b-2 border-amber-400" : "text-slate-400"}`}>Manage Users</button>
+        </div>
+
+        {activeTab === "withdrawals" && (
           <div className="space-y-4">
-            {withdrawals.map((w) => (
-              <div key={w.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded">PENDING</span>
-                    <span className="text-sm text-slate-400">{new Date(w.created_at).toLocaleString()}</span>
+            {withdrawals.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-10 text-center">
+                <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
+                <h2 className="text-xl font-bold">All caught up!</h2>
+                <p className="text-slate-400">No pending withdrawals at the moment.</p>
+              </div>
+            ) : (
+              withdrawals.map((w) => (
+                <div key={w.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded">PENDING</span>
+                      <span className="text-sm text-slate-400">{new Date(w.created_at).toLocaleString()}</span>
+                    </div>
+                    <p className="font-bold text-lg">₦{w.amount.toLocaleString()}</p>
+                    <p className="text-sm text-slate-300 mt-1">{w.account_name} - {w.account_number} ({w.bank_name})</p>
                   </div>
-                  <p className="font-bold text-lg">₦{w.amount.toLocaleString()}</p>
-                  <p className="text-sm text-slate-300 mt-1">{w.account_name} - {w.account_number} ({w.bank_name})</p>
+                  <div className="flex gap-2 w-full md:w-auto">
+                    <button onClick={() => handleApprove(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-emerald-600 px-6 py-3 font-semibold hover:bg-emerald-500 disabled:opacity-50 text-sm">
+                      {processing === w.id ? "..." : "Approve"}
+                    </button>
+                    <button onClick={() => handleReject(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-red-600/10 border border-red-500/20 text-red-400 px-6 py-3 font-semibold hover:bg-red-600/20 disabled:opacity-50 text-sm">
+                      Reject
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                  <button onClick={() => handleApprove(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-emerald-600 px-6 py-3 font-semibold hover:bg-emerald-500 disabled:opacity-50 text-sm">
-                    {processing === w.id ? "..." : "Approve"}
-                  </button>
-                  <button onClick={() => handleReject(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-red-600/10 border border-red-500/20 text-red-400 px-6 py-3 font-semibold hover:bg-red-600/20 disabled:opacity-50 text-sm">
-                    Reject
-                  </button>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === "users" && (
+          <div className="space-y-4">
+            {users.map((u) => (
+              <div key={u.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <p className="font-bold text-lg">{u.name}</p>
+                  <p className="text-sm text-slate-400">{u.email}</p>
+                  <p className="text-xs text-slate-500 mt-1">Status: {u.account_status || "active"}</p>
                 </div>
+                <button onClick={() => handleFreeze(u)} className={`rounded-xl px-6 py-3 font-semibold text-sm ${u.account_status === "frozen" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500"}`}>
+                  {u.account_status === "frozen" ? "Unfreeze" : "Freeze"}
+                </button>
               </div>
             ))}
           </div>
         )}
+
       </div>
     </div>
   );
@@ -1047,6 +1235,7 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/terms" element={<Terms />} />
+      <Route path="/av" element={<AdminDashboard />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePage />} />
@@ -1064,7 +1253,6 @@ function App() {
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/help" element={<Help />} />
-        <Route path="/admin" element={<AdminDashboard />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -1072,5 +1260,4 @@ function App() {
   );
 }
 
-// ✅ EXPORT: default
 export default App;

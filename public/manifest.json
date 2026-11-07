@@ -1,0 +1,15 @@
+{
+  "name": "PrimeVest",
+  "short_name": "PrimeVest",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070D1A",
+  "theme_color": "#070D1A",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2665/2665558.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
