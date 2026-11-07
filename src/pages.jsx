@@ -190,7 +190,7 @@ export function DepositBitcoin() {
   );
 }
 
-/* =========================== WITHDRAW (New Limits & Validation) =========================== */
+/* =========================== WITHDRAW =========================== */
 
 export function Withdraw() {
   const [amount, setAmount] = useState("");
@@ -323,7 +323,7 @@ export function WithdrawAccount() {
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">Request Submitted</h3>
             <p className="text-sm text-slate-300 mb-6">
-              Your transaction will be completed within <strong>36 hours</strong>. The admin will verify your VIP plan and investment schedule.
+              Your transaction will be completed within <strong>3 hours</strong>. The admin will verify your VIP plan and investment schedule.
             </p>
             <button onClick={() => window.location.href = `/withdraw/success?amount=${amount}&bank=${encodeURIComponent(bankName)}&accountName=${encodeURIComponent(accountName)}`} className="w-full rounded-xl bg-blue-600 py-3 font-semibold hover:bg-blue-500 transition">
               View Receipt
@@ -341,10 +341,10 @@ export function WithdrawSuccess() {
   const bank = p.get("bank") || "Bank";
   const accountName = p.get("accountName") || "";
   const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
-  const [timeLeft, setTimeLeft] = useState("36h 0m 0s");
+  const [timeLeft, setTimeLeft] = useState("3h 0m 0s");
 
   useEffect(() => {
-    const endTime = Date.now() + 36 * 60 * 60 * 1000;
+    const endTime = Date.now() + 3 * 60 * 60 * 1000; // 3 Hours
     const tick = () => {
       const diff = endTime - Date.now();
       if (diff <= 0) setTimeLeft("Processing...");
@@ -516,7 +516,6 @@ export function BonusGame() {
     const currentSpeed = clicks.current.length;
     setClickSpeed(currentSpeed);
 
-    // Spawn floating emojis randomly across the screen
     if (currentSpeed >= 4 && Math.random() > 0.3) {
       const emojiList = ["😂", "🤣", "💨", "😮", "🔥"];
       const randomEmoji = emojiList[Math.floor(Math.random() * emojiList.length)];
@@ -567,7 +566,6 @@ export function BonusGame() {
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
-      {/* Floating Emojis Absolute Container */}
       <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
         {emojis.map((e) => (
           <span
@@ -767,12 +765,11 @@ export function Invest() {
   );
 }
 
-/* =========================== PORTFOLIO (Plan-specific returns) =========================== */
+/* =========================== PORTFOLIO (No Tabs) =========================== */
 
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
   const [history, setHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState("portfolio");
   const [claiming, setClaiming] = useState(null); 
   const [claimed, setClaimed] = useState({}); 
   const [toastMsg, setToastMsg] = useState("");
@@ -818,14 +815,12 @@ export function Portfolio() {
     setClaimed(prev => ({ ...prev, [h.id]: true }));
     setClaiming(h.id);
 
-    // ✅ CUSTOM CLAIM LOGIC BASED ON PLAN
     let claimAmount = 0;
     const planName = h.plans?.name || "";
     
     if (planName.includes("Affiliate")) {
-      claimAmount = Math.floor(Math.random() * (2000 - 500 + 1) + 500); // ₦500 to ₦2,000
+      claimAmount = Math.floor(Math.random() * (2000 - 500 + 1) + 500);
     } else {
-      // For Growth, Real Estate, Crypto: Return % of amount
       const percentage = h.plans.expected_return / 100;
       claimAmount = h.amount * percentage;
     }
@@ -846,58 +841,58 @@ export function Portfolio() {
     <div className="min-h-screen bg-slate-950 pb-24 text-white p-4">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
       <header className="mb-6"><a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a></header>
+      
       <h1 className="text-2xl font-bold mb-4">My Portfolio</h1>
 
-      <div className="flex gap-4 border-b border-white/10 mb-6">
-        <button onClick={() => setActiveTab("portfolio")} className={`pb-2 text-sm font-semibold ${activeTab === "portfolio" ? "text-blue-400 border-b-2 border-blue-400" : "text-slate-400"}`}>Active Investments</button>
-        <button onClick={() => setActiveTab("history")} className={`pb-2 text-sm font-semibold ${activeTab === "history" ? "text-blue-400 border-b-2 border-blue-400" : "text-slate-400"}`}>Transaction History</button>
+      {/* Active Investments mapped directly */}
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 mb-10">
+        {holdings.map((h) => {
+          const timeLeft = getTimeLeft(h.last_daily_claim);
+          const isLocallyClaimed = claimed[h.id];
+          const canClaim = !timeLeft && !isLocallyClaimed;
+          
+          let displayProfit = 0;
+          const planName = h.plans?.name || "";
+          if (planName.includes("Affiliate")) {
+              displayProfit = 500; 
+          } else {
+              displayProfit = h.amount * (h.plans.expected_return / 100);
+          }
+
+          return (
+            <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col justify-between">
+              <div>
+                <p className="font-bold">{h.plans?.name}</p>
+                <p className="text-2xl mt-2">{fmt(h.amount)}</p>
+                <p className="text-xs text-slate-500 mt-1">Status: {h.status}</p>
+              </div>
+              {h.status === "active" && (
+                <div className="mt-4">
+                  {(!canClaim) && (
+                    <p className="text-center text-xs text-amber-400 font-mono mb-2 flex items-center justify-center gap-1">
+                      <Timer size={14} /> Next claim in: {timeLeft || "24h 0m 0s"}
+                    </p>
+                  )}
+                  <button 
+                    onClick={() => handleClaim(h)} 
+                    disabled={!canClaim || claiming === h.id} 
+                    className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}
+                  >
+                    {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${planName.includes("Affiliate") ? "Bonus" : fmt(displayProfit)}` : "Wait for timer"}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {activeTab === "portfolio" ? (
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {holdings.map((h) => {
-            const timeLeft = getTimeLeft(h.last_daily_claim);
-            const isLocallyClaimed = claimed[h.id];
-            const canClaim = !timeLeft && !isLocallyClaimed;
-            
-            let displayProfit = 0;
-            const planName = h.plans?.name || "";
-            if (planName.includes("Affiliate")) {
-               displayProfit = 500; // Just to show something in the UI
-            } else {
-               displayProfit = h.amount * (h.plans.expected_return / 100);
-            }
-
-            return (
-              <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col justify-between">
-                <div>
-                  <p className="font-bold">{h.plans?.name}</p>
-                  <p className="text-2xl mt-2">{fmt(h.amount)}</p>
-                  <p className="text-xs text-slate-500 mt-1">Status: {h.status}</p>
-                </div>
-                {h.status === "active" && (
-                  <div className="mt-4">
-                    {(!canClaim) && (
-                      <p className="text-center text-xs text-amber-400 font-mono mb-2 flex items-center justify-center gap-1">
-                        <Timer size={14} /> Next claim in: {timeLeft || "24h 0m 0s"}
-                      </p>
-                    )}
-                    <button 
-                      onClick={() => handleClaim(h)} 
-                      disabled={!canClaim || claiming === h.id} 
-                      className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}
-                    >
-                      {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${planName.includes("Affiliate") ? "Bonus" : fmt(displayProfit)}` : "Wait for timer"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {history.map((tx) => (
+      <h2 className="text-2xl font-bold mb-4">Transaction History</h2>
+      <div className="space-y-3">
+        {history.length === 0 ? (
+          <p className="text-slate-500 text-sm">No transactions yet.</p>
+        ) : (
+          history.map((tx) => (
             <div key={tx.id} className="rounded-xl border border-white/10 bg-[#0D1526] p-4 flex items-center justify-between">
               <div>
                 <p className="font-semibold capitalize">{tx.type.replace("_", " ")}</p>
@@ -907,9 +902,9 @@ export function Portfolio() {
                 {tx.type === "withdraw" ? "-" : "+"}{fmt(tx.amount)}
               </p>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -934,7 +929,7 @@ export function Settings() {
 
   useEffect(() => {
     if (!pendingWithdrawal) return;
-    const endTime = new Date(pendingWithdrawal.created_at).getTime() + (36 * 60 * 60 * 1000);
+    const endTime = new Date(pendingWithdrawal.created_at).getTime() + (3 * 60 * 60 * 1000); // 3 Hours
     const diff = endTime - Date.now();
     if (diff <= 0) setTimeLeft("Processing...");
     else {
@@ -1000,7 +995,6 @@ export function Settings() {
           </div>
         )}
 
-        <a href="/portfolio" className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm">Transaction History</a>
         <a href="/help" className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm">Help Center & Investment Guide</a>
         <button onClick={async () => { await api.logout(); window.location.href = "/"; }} className="flex w-full items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-red-400"><LogOut className="h-5 w-5" /> Log Out</button>
       </main>
