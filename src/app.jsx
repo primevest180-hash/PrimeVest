@@ -1,692 +1,353 @@
-import { useState, useEffect, useCallback } from "react";
-import { Routes, Route, Navigate, Link, useNavigate, useSearchParams, Outlet } from "react-router-dom";
-import { createClient } from "@supabase/supabase-js";
+import { useState, useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  ShieldCheck, Mail, Lock, Eye, EyeOff, ArrowRight, TrendingUp, UserRound, CheckCircle2,
-  Bell, Home as HomeIcon, Wallet, ArrowDownToLine, ArrowUpFromLine, Users, Gift, Share2,
-  Copy, Check, MessageSquare, Send, ChevronRight, ChevronDown, CircleDollarSign, Clock3,
-  Settings as SettingsIcon, LogOut, X, Info, ArrowLeft, CreditCard, LockKeyhole, AlertCircle,
-  Building2, Bitcoin, PiggyBank, BarChart3, PieChart, Search, XCircle, Loader2, ThumbsUp,
-  Headphones, HelpCircle, User, Menu, Star, Sparkles, LineChart, Globe2, ExternalLink, Gamepad2,
-  Rocket, Timer, Zap, Upload, Crown, Unlock, Lock as LockIcon, CheckCircle, RefreshCw
+  ArrowLeft, CreditCard, Bitcoin, Building2, Wallet, Check, Copy, LockKeyhole,
+  ChevronDown, Search, Loader2, CheckCircle2, Headphones, Mail, Crown, ArrowRight,
+  TrendingUp, Timer, Rocket, Zap, HelpCircle, LogOut, User, Gamepad2, Home as HomeIcon,
+  Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon, Clock
 } from "lucide-react";
-import Terms from "./terms";
-import {
-  Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest,
-  Portfolio, Settings, Help
-} from "./pages";
+import { api, supabase } from "./app";
 
-// ✅ EXPORTED HERE CORRECTLY
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
-
-const FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
-async function call(path, body) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(`${FN}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-    body: JSON.stringify(body || {}),
-  });
-  return res.json();
-}
-
-async function notifyAdmin(name, email, type = "New Signup", extra = "") {
-  try {
-    await fetch("https://api.web3forms.com/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        access_key: import.meta.env.VITE_WEB3FORMS_KEY,
-        subject: `PrimeVest: ${type}`,
-        from_name: "PrimeVest",
-        name,
-        email,
-        message: `Type: ${type}\nName: ${name}\nEmail: ${email}\n${extra}`,
-      }),
-    });
-  } catch (err) {
-    console.error("Email failed to send", err);
-  }
-}
-
-async function sendWithdrawalEmail(user, p) {
-  try {
-    await fetch("https://api.web3forms.com/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        access_key: import.meta.env.VITE_WEB3FORMS_KEY,
-        subject: `🚨 New Withdrawal Request — ₦${Number(p.amount).toLocaleString()}`,
-        from_name: "PrimeVest Withdrawals",
-        replyto: user.email,
-        to: "primevest180@gmail.com",
-        message: `WITHDRAWAL REQUEST\n\nUser: ${user.email}\nAmount: ₦${Number(p.amount).toLocaleString()}\nBank: ${p.bank_name}\nAccount No: ${p.account_number}\nAccount Name: ${p.account_name}\n\nLog in to /admin to approve or reject.`,
-      }),
-    });
-  } catch (err) {
-    console.error("Withdrawal email failed", err);
-  }
-}
-
-// ✅ EXPORTED HERE CORRECTLY
-export const api = {
-  signup: async (name, email, password, ref) => {
-    const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
-    const res = await supabase.auth.signUp({ email, password, options: { data: { name: finalName, ref } } });
-    if (!res.error) notifyAdmin(finalName, email, "New User Signup");
-    return res;
-  },
-  login: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-  logout: () => supabase.auth.signOut(),
-  wallet: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("wallets").select("*").eq("user_id", user.id).single();
-  },
-  profile: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("profiles").select("*").eq("id", user.id).single();
-  },
-  notifications: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("notifications").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-  },
-  markRead: (id) => supabase.from("notifications").update({ read: true }).eq("id", id),
-  markAllRead: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("notifications").update({ read: true }).eq("user_id", user.id);
-  },
-  plans: () => supabase.from("plans").select("*").eq("active", true),
-  portfolio: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("investments").select("*, plans(*)").eq("user_id", user.id).order("started_at", { ascending: false });
-  },
-  history: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return supabase.from("transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-  },
-  depositInit: (amount, method, email, vip) => call("index", { action: "deposit", amount, method, email, vip }),
-  
-  withdraw: async (p) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const { error } = await supabase.from("withdrawals").insert({
-      user_id: user.id,
-      amount: p.amount,
-      bank_name: p.bank_name,
-      account_number: p.account_number,
-      account_name: p.account_name,
-      status: "pending",
-      created_at: new Date().toISOString()
-    });
-
-    if (error) {
-      console.error("Withdrawal insert error:", error);
-      return { success: false, error: "Failed to save withdrawal request." };
-    }
-
-    await supabase.from("transactions").insert({
-      user_id: user.id, 
-      type: "withdraw", 
-      amount: p.amount,
-      status: "pending", 
-      reference: `WD-${Date.now()}`, 
-      created_at: new Date().toISOString()
-    });
-
-    await sendWithdrawalEmail(user, p); 
-    
-    return { success: true };
-  },
-
-  claimBonus: async (amount) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from("transactions").insert({ user_id: user.id, type: "bonus", amount, status: "success", reference: `BONUS-${Date.now()}` });
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
-    await supabase.from("notifications").insert({ user_id: user.id, title: "Bonus Claimed", message: `You earned ₦${amount} from the tap game!`, type: "bonus" });
-    return { success: true };
-  },
-
-  invest: async (plan_id, amount, daily_profit, matured_at) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    return call("index", { action: "invest", plan_id, amount, daily_profit, matured_at, email: user.email });
-  },
-
-  claimInvestment: async (investment_id, amount) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
-    if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
-      return { success: false, error: "You can only claim once every 24 hours." };
-    }
-    
-    const exactNow = new Date().toISOString();
-    await supabase.from("investments").update({ last_daily_claim: exactNow }).eq("id", investment_id);
-    
-    const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ 
-        available: (wallet?.available || 0) + amount, 
-        earnings: (wallet?.earnings || 0) + amount, 
-        total: (wallet?.total || 0) + amount 
-    }).eq("user_id", user.id);
-    
-    await supabase.from("transactions").insert({ user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}` });
-    return { success: true };
-  },
-
-  claimDailyLogin: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
-    const now = new Date();
-    
-    if (profile?.last_login_claim && (now.getTime() - new Date(profile.last_login_claim).getTime()) < 86400000) {
-      return { error: "Already claimed" };
-    }
-    
-    await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
-    const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({ user_id: user.id, type: "daily_login", amount: 100, status: "success", reference: `LOGIN-${Date.now()}` });
-    await supabase.from("notifications").insert({ user_id: user.id, title: "Daily Login Bonus", message: "You received ₦100 for logging in today.", type: "deposit" });
-    return { success: true };
-  },
-
-  rewardReferral: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from("profiles").select("referral_code, referral_earnings").eq("id", user.id).single();
-    if (!profile?.referral_code) return { error: "You don't have a referral code." };
-    const { data: referrals } = await supabase.from("profiles").select("id").eq("referred_by", profile.referral_code);
-    if (!referrals || referrals.length === 0) return { error: "No one has used your link yet." };
-    const expectedEarnings = referrals.length * 1000;
-    const currentEarnings = profile?.referral_earnings || 0;
-    if (currentEarnings >= expectedEarnings) return { error: "You have already been rewarded for all your referrals." };
-    const amountToPay = expectedEarnings - currentEarnings;
-    await supabase.from("profiles").update({ referral_earnings: expectedEarnings }).eq("id", user.id);
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amountToPay, total: (wallet?.total || 0) + amountToPay }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({ user_id: user.id, type: "referral_bonus", amount: amountToPay, status: "success", reference: `REF-${Date.now()}` });
-    await supabase.from("notifications").insert({ user_id: user.id, title: "Referral Bonus", message: `You earned ₦${amountToPay} for your referrals!`, type: "referral" });
-    return { amount: amountToPay };
-  },
-
-  upgradeVIP: async (tier, cost) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from("profiles").update({ vip_tier: tier }).eq("id", user.id);
-    await supabase.from("transactions").insert({ user_id: user.id, type: "vip_purchase", amount: cost, status: "success", reference: `VIP-${Date.now()}` });
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    const bonus = tier === "VIP 1" ? 5000 : tier === "VIP 2" ? 10000 : 17000;
-    await supabase.from("wallets").update({ available: (wallet?.available || 0) + bonus, total: (wallet?.total || 0) + bonus }).eq("user_id", user.id);
-    await supabase.from("notifications").insert({ user_id: user.id, title: "VIP Upgraded", message: `You are now a ${tier}. ₦${bonus} investment bonus added to your wallet.`, type: "system" });
-    notifyAdmin(user.email, user.email, `VIP Subscription Purchased (${tier})`);
-    return { success: true };
-  },
-
-  uploadAvatar: async (file, userId) => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${userId}-${Math.random()}.${fileExt}`;
-    const { error } = await supabase.storage.from("avatars").upload(fileName, file);
-    if (error) throw error;
-    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
-    await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
-    return data.publicUrl;
-  },
-
-  getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
-  
-  approveWithdrawal: async (withdrawalId, user_id, amount) => {
-    const { data: wallet } = await supabase.from("wallets").select("available, total").eq("user_id", user_id).single();
-    await supabase.from("wallets").update({ 
-      available: (wallet?.available || 0) - amount, 
-      total: (wallet?.total || 0) - amount 
-    }).eq("user_id", user_id);
-
-    await supabase.from("withdrawals").update({ status: "success" }).eq("id", withdrawalId);
-    await supabase.from("transactions").update({ status: "success" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
-    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Approved", message: `Your withdrawal of ₦${amount} has been sent to your bank.`, type: "withdraw" });
-    return { success: true };
-  },
-
-  rejectWithdrawal: async (withdrawalId, user_id, amount) => {
-    await supabase.from("withdrawals").update({ status: "rejected" }).eq("id", withdrawalId);
-    await supabase.from("transactions").update({ status: "failed" }).eq("user_id", user_id).eq("type", "withdraw").eq("status", "pending");
-    await supabase.from("notifications").insert({ user_id, title: "Withdrawal Rejected", message: `Your withdrawal of ₦${amount} was rejected.`, type: "withdraw" });
-    return { success: true };
-  },
-};
-
-function LoadingScreen() {
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070D1A]">
-      <div className="relative flex h-24 w-24 items-center justify-center">
-        <div className="absolute inset-0 rounded-full border-2 border-blue-500/30 animate-ping"></div>
-        <div className="absolute inset-2 rounded-full border-2 border-blue-500/50 animate-pulse"></div>
-        <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-800 shadow-2xl shadow-blue-900/50">
-          <ShieldCheck size={32} className="text-white animate-bounce" />
-        </div>
-      </div>
-      <h1 className="mt-6 text-2xl font-bold text-white tracking-widest">Prime<span className="text-blue-400">Vest</span></h1>
-    </div>
-  );
-}
-
-const Toast = ({ message, onClose }) => {
+export const Toast = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 4000);
     return () => clearTimeout(timer);
   }, [onClose]);
+
   return (
     <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] rounded-2xl border border-emerald-500/30 bg-[#0D1526] px-6 py-4 shadow-2xl backdrop-blur-xl flex items-center gap-3">
-      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+      </div>
       <p className="text-sm font-semibold text-white">{message}</p>
     </div>
   );
 };
 
-function ProtectedRoute() {
-  const [loading, setLoading] = useState(true);
-  const [authed, setAuthed] = useState(false);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setAuthed(!!data.session); setLoading(false); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setAuthed(!!s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-  if (loading) return <LoadingScreen />;
-  if (!authed) return <Navigate to="/login" replace />;
-  return <Outlet />;
+/* =========================== DEPOSIT =========================== */
+
+export function Deposit() {
+  const [amount, setAmount] = useState("");
+  const [region, setRegion] = useState("Nigeria");
+  const [error, setError] = useState("");
+  const handleContinue = () => {
+    const n = Number(amount);
+    if (!n || n <= 0) return setError("Enter a valid amount.");
+    if (n < 7500) return setError("Minimum ₦7,500.");
+    if (region !== "Nigeria") window.location.href = `/deposit/bitcoin?amount=${n}`;
+    else window.location.href = `/deposit/payment?amount=${n}`;
+  };
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 max-w-5xl items-center gap-4 px-4">
+          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <div><h1 className="text-xl font-bold">Deposit</h1></div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">Note: If you can't use Paystack, use Bitcoin for faster transactions.</div>
+        <div className="rounded-3xl bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 p-6">
+          <Wallet className="h-8 w-8 text-blue-200" />
+          <p className="mt-6 text-sm text-blue-200">Minimum Deposit</p>
+          <h2 className="mt-2 text-4xl font-bold">₦7,500.00</h2>
+        </div>
+        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
+          <label className="mb-2 block text-sm text-slate-300">Select Region</label>
+          <select value={region} onChange={(e) => setRegion(e.target.value)} className="mb-6 w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 outline-none">
+            <option value="Nigeria">Nigeria (Paystack)</option>
+            <option value="USA">USA (Bitcoin)</option>
+            <option value="UK">UK (Bitcoin)</option>
+            <option value="Europe">Europe (Bitcoin)</option>
+          </select>
+          <label className="mb-2 block text-sm text-slate-300">Amount (NGN)</label>
+          <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
+            <span className="flex items-center px-4 text-slate-400">₦</span>
+            <input value={amount} onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }} placeholder="7,500" className="w-full bg-transparent px-2 py-4 outline-none" />
+          </div>
+          {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
+          <button onClick={handleContinue} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
+        </div>
+      </main>
+    </div>
+  );
 }
 
-function Navbar() {
-  const [isOpen, setIsOpen] = useState(false);
+export function DepositPayment() {
+  const p = new URLSearchParams(window.location.search);
+  const amount = p.get("amount") || "0";
+  const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
   return (
-    <nav className="fixed left-0 right-0 top-0 z-50 px-3 py-3 sm:px-4 sm:py-4 lg:px-8">
-      <div className="mx-auto max-w-7xl rounded-2xl border border-blue-400/20 bg-blue-950/90 shadow-2xl shadow-blue-950/30 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 lg:px-7">
-          <a href="#home" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-900/40 sm:h-11 sm:w-11"><ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" /></div>
-            <div><h2 className="text-base font-bold tracking-tight text-white sm:text-lg">PrimeVest</h2><p className="text-[8px] font-medium uppercase tracking-[0.18em] text-blue-300 sm:text-[9px]">Wealth Management</p></div>
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4">
+          <a href="/deposit" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold">Payment Method</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6">
+          <p className="text-sm text-blue-200">Amount</p>
+          <h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2>
+        </div>
+        <div className="mt-6 space-y-4">
+          <a href={`/deposit/card?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-blue-500">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10"><CreditCard className="h-7 w-7 text-blue-400" /></div>
+            <div><h3 className="font-semibold">Card / Transfer (Paystack)</h3></div>
           </a>
-          <div className="hidden items-center gap-8 lg:flex">
-            <a href="#strategies" className="text-sm font-medium text-slate-300 transition hover:text-blue-300">Strategies</a>
-            <a href="#about" className="text-sm font-medium text-slate-300 transition hover:text-blue-300">About</a>
-          </div>
-          <div className="hidden items-center gap-3 lg:flex">
-            <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-300 transition hover:bg-blue-900/60 hover:text-white">Sign in</Link>
-            <Link to="/signup" className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition hover:bg-blue-500">Get Started</Link>
-          </div>
-          <button onClick={() => setIsOpen(!isOpen)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-900/40 text-slate-200 lg:hidden">
-            {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <a href={`/deposit/bitcoin?amount=${amount}`} className="flex items-center gap-4 rounded-2xl border border-blue-400/10 bg-slate-900 p-5 hover:border-amber-500">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10"><Bitcoin className="h-7 w-7 text-amber-400" /></div>
+            <div><h3 className="font-semibold">Bitcoin</h3></div>
+          </a>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export function DepositCard() {
+  const p = new URLSearchParams(window.location.search);
+  const amount = Number(p.get("amount") || 0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
+
+  async function pay() {
+    setLoading(true); setError("");
+    const { data: { user } } = await supabase.auth.getUser();
+    const r = await api.depositInit(amount, "card", user.email);
+    setLoading(false);
+    if (r?.authorization_url) window.location.href = r.authorization_url;
+    else if (r?.url) window.location.href = r.url;
+    else setError(r?.error || "Failed to initialize payment.");
+  }
+
+  return (
+    <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
+      <header className="border-b border-white/5 bg-[#070D1A]/95">
+        <div className="mx-auto flex h-20 max-w-5xl items-center gap-4 px-5">
+          <a href={`/deposit/payment?amount=${amount}`} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><ArrowLeft size={19} /></a>
+          <h1 className="text-lg font-semibold">Card Payment</h1>
+        </div>
+      </header>
+      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-5">
+        <div className="w-full max-w-xl rounded-2xl border border-white/8 bg-[#0D1526] p-6">
+          {error && <div className="mt-4 rounded-xl bg-red-500/5 p-4 text-sm text-red-300">{error}</div>}
+          <button onClick={pay} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold disabled:opacity-60">
+            <LockKeyhole size={17} />{loading ? "Redirecting..." : `Pay ₦${fmt}`}
           </button>
         </div>
-      </div>
-    </nav>
+      </main>
+    </div>
   );
 }
 
-function Hero() {
-  return (
-    <section id="home" className="relative min-h-screen overflow-hidden bg-slate-950 pt-10">
-      <div className="absolute inset-0 [background:linear-gradient(135deg,#020617,#172554,#0f172a)]" />
-      <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-blue-600/20 blur-3xl" />
-      <div className="relative mx-auto max-w-7xl px-6 py-20 lg:px-12 lg:py-28">
-        <div className="max-w-3xl">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
-            <Sparkles className="h-4 w-4" />Trusted by 550,000+ investors
-          </div>
-          <h1 className="text-5xl font-bold leading-tight text-white lg:text-7xl">Grow your wealth with <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">confidence</span></h1>
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
-            PrimeVest is your all-in-one wealth management platform. Whether you're looking to grow your savings with high-yield portfolios, invest in real estate, or earn through our interactive bonus games, we provide a secure, transparent, and effortless way to build your financial future.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-4">
-            <Link to="/signup" className="inline-flex items-center rounded-lg bg-blue-600 px-6 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-500">Start Investing<ArrowRight className="ml-2 h-4 w-4" /></Link>
-            <a href="#strategies" className="rounded-lg border border-slate-600 px-6 py-3 font-semibold text-slate-200 transition hover:bg-slate-800">View Strategies</a>
-          </div>
-          <div className="mt-10 flex flex-wrap gap-6 text-sm text-slate-400">
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />SEC Registered</div>
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />N2B+ Managed</div>
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-blue-400" />4.9/5 Rating</div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Stats() {
-  const stats = [
-    { icon: TrendingUp, value: "12.4%", label: "Average Annual Return", color: "bg-blue-500/10 text-blue-400" },
-    { icon: Users, value: "550K+", label: "Active Investors", color: "bg-indigo-500/10 text-indigo-400" },
-    { icon: Building2, value: "N2.1B", label: "Assets Under Management", color: "bg-sky-500/10 text-sky-400" },
-    { icon: Globe2, value: "40+", label: "Global Markets", color: "bg-blue-500/10 text-blue-400" },
-  ];
-  return (
-    <section className="relative z-10 mx-auto -mt-8 max-w-7xl px-4 sm:px-6 lg:px-8">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div key={s.label} className="rounded-2xl border border-blue-400/10 bg-slate-900/90 p-6 shadow-xl backdrop-blur-xl">
-              <div className="flex items-center gap-4">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}><Icon className="h-6 w-6" /></div>
-                <div><p className="text-2xl font-bold text-white">{s.value}</p><p className="mt-1 text-sm text-slate-400">{s.label}</p></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function InvestmentCards() {
-  const strategies = [
-    { icon: LineChart, title: "Growth Portfolio", description: "High-potential stocks and ETFs", return: "12.5%", risk: "Moderate", color: "bg-blue-500/10 text-blue-400", badge: "Popular" },
-    { icon: Building2, title: "Real Estate", description: "REITs and property funds", return: "11.9%", risk: "Moderate", color: "bg-sky-500/10 text-sky-400", badge: "New" },
-    { icon: Bitcoin, title: "Crypto Index", description: "Diversified digital assets", return: "22.0%", risk: "High", color: "bg-amber-500/10 text-amber-400", badge: "High Growth" },
-    { icon: Users, title: "Affiliate Marketing", description: "Digital commerce assets", return: "15.0%", risk: "Moderate", color: "bg-emerald-500/10 text-emerald-400", badge: "Trending" },
-  ];
-  return (
-    <section id="strategies" className="relative bg-slate-950 px-4 py-20 sm:px-6 lg:px-8">
-      <div className="mx-auto mb-12 flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-400">Investment Options</p>
-          <h2 className="text-3xl font-bold text-white sm:text-4xl">Investment Strategies</h2>
-          <p className="mt-3 max-w-xl text-slate-400">Choose a strategy that matches your goals.</p>
-        </div>
-      </div>
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {strategies.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div key={s.title} className="rounded-2xl border border-blue-400/10 bg-slate-900/80 p-6 shadow-xl backdrop-blur-xl transition hover:-translate-y-2 hover:border-blue-400/30">
-              <div className="flex items-start justify-between">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}><Icon className="h-6 w-6" /></div>
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300">{s.badge}</span>
-              </div>
-              <h3 className="mt-5 text-lg font-bold text-white">{s.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">{s.description}</p>
-              <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">
-                <div><p className="text-xs text-slate-500">Avg. Return</p><p className="mt-1 text-xl font-bold text-blue-400">{s.return}</p></div>
-                <div className="text-right"><p className="text-xs text-slate-500">Risk</p><p className="mt-1 text-sm font-medium text-slate-300">{s.risk}</p></div>
-              </div>
-              <Link to="/signup" className="mt-5 block w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-blue-500">Invest Now</Link>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function Testimonials() {
-  const items = [
-    { name: "Olamide John", role: "Civil Servant", quote: "PrimeVest made investing feel approachable.", initials: "OJ", color: "bg-blue-600" },
-    { name: "Michael Chukwuma", role: "Business Owner", quote: "The automated tools made managing my investments easier.", initials: "MC", color: "bg-indigo-600" },
-    { name: "Joy Temi", role: "Marketing Director", quote: "PrimeVest's strategies made my goals clearer.", initials: "JT", color: "bg-sky-600" },
-  ];
-  return (
-    <section id="about" className="bg-slate-900 px-4 py-20 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-12 text-center">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-blue-400">Client Stories</p>
-          <h2 className="text-3xl font-bold text-white sm:text-4xl">Trusted by thousands of investors</h2>
-        </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {items.map((t) => (
-            <div key={t.name} className="rounded-2xl border border-blue-400/10 bg-slate-800/60 p-6 shadow-xl">
-              <div className="mb-5 flex gap-1">{[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />)}</div>
-              <p className="text-sm leading-relaxed text-slate-300">"{t.quote}"</p>
-              <div className="mt-6 flex items-center gap-3 border-t border-slate-700 pt-5">
-                <div className={`flex h-11 w-11 items-center justify-center rounded-full ${t.color} text-sm font-bold text-white`}>{t.initials}</div>
-                <div><p className="text-sm font-semibold text-white">{t.name}</p><p className="text-xs text-slate-400">{t.role}</p></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LandingPage() {
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.href = "/home";
-      else setCheckingAuth(false);
-    });
-  }, []);
-  if (checkingAuth) return <LoadingScreen />;
-  return (
-    <main className="min-h-screen bg-slate-950">
-      <Navbar />
-      <Hero />
-      <Stats />
-      <InvestmentCards />
-      <Testimonials />
-    </main>
-  );
-}
-
-function Login() {
-  const navigate = useNavigate();
-  const [showPassword, setShowPassword] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "" });
+export function DepositBitcoin() {
+  const p = new URLSearchParams(window.location.search);
+  const amount = Number(p.get("amount") || 0);
+  const [address, setAddress] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e) {
-    e.preventDefault(); setError(""); setLoading(true);
-    const { error } = await api.login(form.email.trim(), form.password);
-    setLoading(false);
-    if (error) return setError("Incorrect email or password.");
-    navigate("/home");
-  }
-
-  async function handleForgotPassword() {
-    if (!form.email) return alert("Please type your email address first, then click Forgot Password.");
-    const { error } = await supabase.auth.resetPasswordForEmail(form.email.trim(), { redirectTo: `${window.location.origin}/settings` });
-    if (error) alert(error.message);
-    else alert("Password reset link sent to your email!");
-  }
-
-  async function signInWith(provider) {
-    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
-  }
-
-  return (
-    <main className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl lg:grid-cols-2">
-        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
-          <Link to="/" className="inline-flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10"><ShieldCheck size={27} /></div>
-            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
-          </Link>
-          <div className="mt-24"><div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10"><TrendingUp size={30} /></div><h1 className="text-4xl font-bold leading-tight">Welcome back to your dashboard.</h1></div>
-        </section>
-        <section className="p-6 sm:p-10 lg:p-12">
-          <div className="mt-8 lg:mt-10"><p className="text-sm font-medium text-blue-400">WELCOME BACK</p><h2 className="mt-2 text-3xl font-bold">Log in</h2></div>
-          <form onSubmit={submit} className="mt-6 space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Mail size={19} className="text-slate-500" /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" /></div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
-                <Lock size={19} className="text-slate-500" />
-                <input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your password" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-slate-500 hover:text-white">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button>
-              </div>
-            </div>
-            <div className="flex items-center justify-end">
-              <button type="button" onClick={handleForgotPassword} className="text-xs text-blue-400 hover:text-blue-300">Forgot Password?</button>
-            </div>
-            {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-            <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Logging in..." : "Log In"}</button>
-          </form>
-          <div className="mt-6 space-y-3">
-            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Continue with Google</button>
-            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Continue with GitHub</button>
-          </div>
-          <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
-            <p>Don't have an account? <Link to="/signup" className="font-semibold text-blue-400">Create one</Link></p>
-            <Link to="/terms" className="text-xs text-slate-500 hover:text-slate-300">Terms & Conditions</Link>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function Signup() {
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const referral = params.get("ref") || "";
-  const [showPassword, setShowPassword] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(false);
-
-  async function submit(e) {
-    e.preventDefault(); setError("");
-    if (!agreeTerms) return setError("You must agree to the Terms & Conditions.");
-    if (form.name.trim().length < 2) return setError("Enter your full name.");
-    if (form.password.length < 8) return setError("Password must be 8+ characters.");
-    if (form.password !== form.confirmPassword) return setError("Passwords don't match.");
-    setLoading(true);
-    const { error } = await api.signup(form.name.trim(), form.email.trim().toLowerCase(), form.password, referral);
-    setLoading(false);
-    if (error) return setError(error.message);
-    navigate("/home");
-  }
-
-  async function signInWith(provider) {
-    if (!agreeTerms) return setError("You must agree to the Terms & Conditions first.");
-    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
-  }
-
-  return (
-    <main className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl lg:grid-cols-2">
-        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
-          <Link to="/" className="inline-flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10"><ShieldCheck size={27} /></div>
-            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
-          </Link>
-          <div className="my-16">
-            <h1 className="text-4xl font-bold leading-tight">Create your PrimeVest account.</h1>
-            <div className="mt-8 space-y-4">
-              {["Access dashboard", "Explore pages", "Manage account"].map((i) => (
-                <div key={i} className="flex items-center gap-3"><CheckCircle2 size={19} className="text-blue-200" /><span className="text-sm text-blue-50">{i}</span></div>
-              ))}
-            </div>
-          </div>
-        </section>
-        <section className="p-6 sm:p-10 lg:p-12">
-          <div className="mt-8 lg:mt-3"><p className="text-sm font-medium text-blue-400">GET STARTED</p><h2 className="mt-2 text-3xl font-bold">Create account</h2></div>
-          <form onSubmit={submit} className="mt-6 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Full name</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><UserRound size={19} className="text-slate-500" /><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your name" /></div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Mail size={19} className="text-slate-500" /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" /></div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Password</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Lock size={19} className="text-slate-500" /><input type={showPassword ? "text" : "password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="8+ characters" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="text-slate-500 hover:text-white">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">Confirm password</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4"><Lock size={19} className="text-slate-500" /><input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Again" /></div>
-            </div>
-            <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">{loading ? "Creating..." : "Create Account"}</button>
-          </form>
-          <div className="mt-6 space-y-3">
-            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Sign up with Google</button>
-            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Sign up with GitHub</button>
-          </div>
-          <div className="mt-8 flex flex-col items-center gap-3 text-sm text-slate-400">
-            <p>Already have an account? <Link to="/login" className="font-semibold text-blue-400">Log in</Link></p>
-            <div className="flex items-center gap-2 mt-2">
-              <input type="checkbox" id="terms" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500" />
-              <label htmlFor="terms" className="text-xs text-slate-400">I agree to the <Link to="/terms" className="text-blue-400 hover:underline">Terms & Conditions</Link></label>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function HomePage() {
-  const navigate = useNavigate();
-  const [isUsd, setIsUsd] = useState(false);
-  const [balanceVisible, setBalanceVisible] = useState(true);
-  const [wallet, setWallet] = useState({ available: 0, invested: 0, earnings: 0, total: 0 });
-  const [profile, setProfile] = useState({ name: "User", role: "Investor", referral_code: "", avatar_url: "", last_login_claim: null, vip_tier: "None" });
-  const [investments, setInvestments] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifs, setShowNotifs] = useState(false);
-  const [showSupport, setShowSupport] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [, setTick] = useState(0);
-  const [toastMsg, setToastMsg] = useState("");
-  const [shareMessage, setShareMessage] = useState("");
-  const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [timeLeft, setTimeLeft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const r = await api.depositInit(amount, "bitcoin", user.email);
+      if (r?.btc_address) setAddress(r.btc_address);
+      else setError(r?.error || "Failed.");
+      setLoading(false);
+    })();
+  }, [amount]);
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4">
+          <a href={`/deposit`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold">Bitcoin Deposit</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="rounded-3xl bg-gradient-to-br from-amber-950 to-amber-700 p-6">
+          <Bitcoin className="h-8 w-8 text-amber-200" />
+          <p className="mt-6 text-sm text-amber-200">Amount</p>
+          <h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2>
+        </div>
+        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
+          {error && <p className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+          {loading ? <p className="text-sm text-slate-400">Generating...</p> : address ? (
+            <>
+              <p className="text-xs text-slate-500">BTC Address</p>
+              <p className="mt-2 break-all font-mono text-sm">{address}</p>
+              <button onClick={async () => { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold">
+                {copied ? <Check /> : <Copy />}{copied ? "Copied" : "Copy Address"}
+              </button>
+            </>
+          ) : null}
+        </div>
+      </main>
+    </div>
+  );
+}
 
-  const [messages, setMessages] = useState([
-    { id: 1, user: "PrimeVest Bot", text: "Welcome to the Global Chat! 🚀", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
-    { id: 2, user: "Chinedu O.", text: "Just claimed my daily ₦300! PrimeVest is paying 🔥", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
-  ]);
-  const [newMsg, setNewMsg] = useState("");
+/* =========================== WITHDRAW =========================== */
 
-  const isVip = profile.vip_tier && profile.vip_tier !== "None";
+export function Withdraw() {
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState("");
+  const [balance, setBalance] = useState(0);
+  useEffect(() => { api.wallet().then(({ data }) => data && setBalance(data.available)); }, []);
 
-  const formatMoney = (amount) => {
-    const safeAmount = Math.max(0, amount || 0); 
-    if (!safeAmount) return isUsd ? "$0.00" : "₦0.00";
-    if (isUsd) return `$${(safeAmount / 1500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return `₦${safeAmount.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const next = () => {
+    const n = Number(amount);
+    if (!n || n < 14500) return setError("Minimum withdrawal is ₦14,500.");
+    if (n > 50000) return setError("Maximum withdrawal is ₦50,000.");
+    if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
+    window.location.href = `/withdraw/account?amount=${n}`;
   };
 
-  const loadData = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    let { data: w, error } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
-    if (error || !w) {
-      await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
-      const retry = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
-      w = retry.data;
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 items-center gap-4 px-4 max-w-2xl">
+          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold">Withdraw</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <div className="rounded-2xl border border-blue-400/10 bg-blue-950/30 p-5">
+          <p className="text-sm text-slate-400">Available</p>
+          <p className="mt-1 text-2xl font-bold text-blue-400">₦{balance.toLocaleString()}</p>
+        </div>
+        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
+          <label className="mb-2 block text-sm">Amount (Min ₦14,500 - Max ₦50,000)</label>
+          <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
+            <span className="flex items-center px-4 text-slate-400">₦</span>
+            <input value={amount} onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }} placeholder="14,500" className="w-full bg-transparent px-2 py-4 outline-none" />
+          </div>
+          {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
+          <button onClick={next} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+const NIGERIAN_BANKS = [
+  "Access Bank", "Citibank", "Ecobank", "Fidelity Bank", "First Bank", "First City Monument Bank (FCMB)", 
+  "Globus Bank", "Guaranty Trust Bank (GTB)", "Heritage Bank", "Jaiz Bank", "Keystone Bank", "Lotus Bank", 
+  "Parallex Bank", "Polaris Bank", "Premium Trust Bank", "Providus Bank", "Stanbic IBTC Bank", "Standard Chartered", 
+  "Sterling Bank", "SunTrust Bank", "Union Bank", "United Bank for Africa (UBA)", "Unity Bank", "Wema Bank", "Zenith Bank", 
+  "Opay", "Palmpay", "Moniepoint", "Kuda", "PocketApp", "Carbon", "VFD Microfinance Bank"
+];
+
+export function WithdrawAccount() {
+  const [bankName, setBankName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
+  const [error, setError] = useState("");
+
+  const params = new URLSearchParams(window.location.search);
+  const amount = Number(params.get("amount") || 0);
+  const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
+
+  async function proceed() {
+    if (!bankName || !accountNumber || !accountName) return setError("Please fill in all fields.");
+    
+    const isValidBank = NIGERIAN_BANKS.some(b => b.toLowerCase().includes(bankName.toLowerCase()) || bankName.toLowerCase().includes(b.toLowerCase()));
+    if (!isValidBank) return setError("Bank not recognized. Please use a valid Nigerian bank.");
+    
+    if (accountNumber.length !== 10) return setError("Account number must be exactly 10 digits.");
+    
+    const nameParts = accountName.trim().split(" ");
+    if (nameParts.length < 2 || !/^[a-zA-Z\s]+$/.test(accountName)) {
+      return setError("Please enter your full legal name (First and Last name).");
     }
-    const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
-    if (w) setWallet(w);
-    if (p.data) setProfile(p.data);
-    if (i.data) setInvestments(i.data);
-    if (n.data) setNotifications(n.data);
-    setLoading(false);
-  }, []);
+
+    setSubmitting(true);
+    setError("");
+
+    const r = await api.withdraw({
+      amount,
+      bank_name: bankName,
+      bank_code: "manual",
+      account_number: accountNumber,
+      account_name: accountName,
+    });
+
+    setSubmitting(false);
+    if (r?.success) setShowPopup(true);
+    else setError(r?.error || "Failed to submit request. Please try again.");
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 items-center gap-4 px-4 max-w-2xl">
+          <a href="/withdraw" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold">Withdrawal Details</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6 text-center">
+          <p className="text-sm text-blue-200">Amount to Withdraw</p>
+          <h2 className="mt-2 text-4xl font-bold">₦{fmt}</h2>
+        </div>
+        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-medium">Bank Name</label>
+            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. GTBank" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
+          </div>
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-medium">Account Number</label>
+            <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit number" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
+          </div>
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">Account Name</label>
+            <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Full Name" className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none focus:border-blue-500" />
+          </div>
+          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+          <button onClick={proceed} disabled={submitting} className="w-full rounded-xl bg-emerald-600 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
+            {submitting ? "Processing..." : "Confirm Withdrawal"}
+          </button>
+        </div>
+      </main>
+
+      {showPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-emerald-500/30 bg-[#0D1526] p-8 text-center shadow-2xl">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 mb-4">
+              <CheckCircle2 className="h-10 w-10 text-emerald-400" />
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-2">Request Submitted</h3>
+            <p className="text-sm text-slate-300 mb-6">
+              Your transaction will be completed within <strong>3 hours</strong>. The admin will verify your VIP plan and investment schedule.
+            </p>
+            <button onClick={() => window.location.href = `/withdraw/success?amount=${amount}&bank=${encodeURIComponent(bankName)}&accountName=${encodeURIComponent(accountName)}`} className="w-full rounded-xl bg-blue-600 py-3 font-semibold hover:bg-blue-500 transition">
+              View Receipt
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function WithdrawSuccess() {
+  const p = new URLSearchParams(window.location.search);
+  const amount = p.get("amount") || "0";
+  const bank = p.get("bank") || "Bank";
+  const accountName = p.get("accountName") || "";
+  const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
+  const [timeLeft, setTimeLeft] = useState("3h 0m 0s");
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [loadData]);
-
-  useEffect(() => {
-    if (!profile.last_login_claim) { setTimeLeft(""); return; }
+    const endTime = Date.now() + 3 * 60 * 60 * 1000; // 3 Hours
     const tick = () => {
-      const next = new Date(profile.last_login_claim).getTime() + 86400000;
-      const diff = next - Date.now();
-      if (diff <= 0) setTimeLeft("Ready!");
+      const diff = endTime - Date.now();
+      if (diff <= 0) setTimeLeft("Processing...");
       else {
         const h = Math.floor(diff / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
@@ -697,380 +358,679 @@ function HomePage() {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [profile.last_login_claim]);
-
-  useEffect(() => {
-    const chatTimer = setInterval(() => {
-      const bots = ["David K.", "Blessing U.", "Femi A.", "Tunde B.", "Amaka J."];
-      const replies = ["I just reinvested my profit.", "PrimeVest is the best.", "The daily claims are so smooth.", "Just hit my 7-day streak!", "Withdrawals are instant wow."];
-      const randomBot = bots[Math.floor(Math.random() * bots.length)];
-      const randomReply = replies[Math.floor(Math.random() * replies.length)];
-      setMessages((prev) => [...prev, { id: Date.now(), user: randomBot, text: randomReply, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
-    }, 3600000);
-    return () => clearInterval(chatTimer);
   }, []);
 
-  const actualInvested = investments.filter(i => i.status === "active").reduce((sum, inv) => sum + Number(inv.amount), 0);
-
-  const now = new Date();
-  const canClaimDaily = !profile.last_login_claim || (now.getTime() - new Date(profile.last_login_claim).getTime()) >= 86400000;
-
-  async function handleClaimDaily() {
-    if (!canClaimDaily) return;
-    const r = await api.claimDailyLogin();
-    if (r.error) return setToastMsg("You can only claim once every 24 hours.");
-    setToastMsg("You have claimed your bonus of ₦100!");
-    loadData();
-  }
-
-  async function handleShare() {
-    const res = await api.rewardReferral();
-    if (res.amount) { setShareMessage(`Success! You earned ₦${res.amount.toLocaleString()} for your referrals.`); loadData(); }
-    else if (res.error) setShareMessage(res.error);
-  }
-
-  function sendMessage(e) {
-    e.preventDefault();
-    if (!newMsg.trim()) return;
-    setMessages((prev) => [...prev, { id: Date.now(), user: profile.name, text: newMsg, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
-    setNewMsg("");
-  }
-
-  if (loading) return <LoadingScreen />;
-
   return (
-    <div className={`min-h-screen pb-28 text-white relative transition-colors duration-500 ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
-      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
-
-      <button onClick={() => setShowSupport(true)} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl shadow-blue-900/50 hover:bg-blue-500 transition">
-        <Headphones className="h-6 w-6" />
-      </button>
-
-      {showSupport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && setShowSupport(false)}>
-          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-6 text-center shadow-2xl">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10"><Headphones className="h-8 w-8 text-blue-400" /></div>
-            <h3 className="mt-4 text-xl font-bold">Customer Care</h3>
-            <p className="mt-2 text-sm text-slate-400">Welcome! Please contact us using the details below if you need assistance.</p>
-            <div className="mt-6 space-y-3">
-              <a href="mailto:primevest180@gmail.com" className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium hover:bg-slate-800"><Mail className="h-4 w-4 text-blue-400" /> primevest180@gmail.com</a>
-            </div>
-            <button onClick={() => setShowSupport(false)} className="mt-6 w-full rounded-xl border border-white/10 py-3 text-sm font-semibold">Close</button>
+    <div className="min-h-screen bg-[#0A0A0A] pb-24 text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-3xl border border-amber-500/30 bg-gradient-to-b from-[#2A1D00] to-[#0A0A0A] p-8 text-center shadow-[0_0_50px_rgba(245,158,11,0.15)]">
+        <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-amber-500/10 mb-6">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-yellow-600 shadow-lg">
+            <Clock className="h-10 w-10 text-black" />
           </div>
         </div>
-      )}
-
-      <header className={`sticky top-0 z-40 border-b backdrop-blur-xl transition-colors duration-500 ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/6 bg-[#070D1A]/95"}`}>
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <h1 className="text-xl font-bold">Prime<span className={isVip ? "text-amber-400" : "text-blue-400"}>Vest</span></h1>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setIsUsd(!isUsd)} className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold hover:bg-white/10">
-              <Globe2 size={14} className={isVip ? "text-amber-400" : "text-blue-400"} /> {isUsd ? "USD" : "NGN"}
-            </button>
-            <button onClick={() => setShowNotifs(!showNotifs)} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition">
-              <Bell size={18} />
-              {notifications.filter((n) => !n.read).length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{notifications.filter((n) => !n.read).length}</span>}
-            </button>
-            <div className={`relative h-10 w-10 rounded-full border overflow-hidden flex items-center justify-center ml-2 ${isVip ? "border-amber-400/50 bg-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.3)]" : "border-blue-400/30 bg-blue-500/20"}`}>
-              {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User size={16} className={isVip ? "text-amber-300" : "text-blue-300"} />}
-              {isVip && (
-                <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 shadow-sm">
-                  <Crown size={12} className="text-black" />
-                </div>
-              )}
-            </div>
-          </div>
+        
+        <p className="text-sm font-bold uppercase tracking-widest text-amber-400">Transfer Pending</p>
+        <h1 className="mt-2 text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500">₦{fmt}</h1>
+        
+        <div className="mt-6 rounded-xl border border-amber-500/20 bg-black/40 p-4 text-sm">
+          <p className="text-slate-400">To: <span className="font-semibold text-white">{accountName}</span></p>
+          <p className="text-slate-400 mt-1">Bank: <span className="font-semibold text-white">{bank}</span></p>
         </div>
-      </header>
 
-      {showNotifs && (
-        <div className="fixed top-20 right-4 z-50 w-80 max-h-96 overflow-y-auto rounded-2xl border border-white/10 bg-[#0D1526] shadow-2xl">
-          <div className="flex items-center justify-between border-b border-white/10 p-4">
-            <h3 className="font-bold">Notifications</h3>
-            <button onClick={async () => { await api.markAllRead(); loadData(); }} className="text-xs text-blue-400">Mark all read</button>
-          </div>
-          <div className="p-2">
-            {notifications.length === 0 ? <p className="p-4 text-sm text-slate-500 text-center">No notifications yet.</p> : notifications.map((n) => (
-              <div key={n.id} className={`p-3 border-b border-white/5 last:border-0 ${n.read ? "opacity-50" : ""}`}>
-                <p className="text-sm font-semibold">{n.title}</p>
-                <p className="text-xs text-slate-400 mt-1">{n.message}</p>
-              </div>
-            ))}
-          </div>
+        <div className="mt-8 rounded-xl bg-amber-500/10 p-4 border border-amber-500/20">
+          <p className="text-xs text-amber-200 uppercase tracking-widest font-bold mb-1">Time Remaining</p>
+          <p className="text-2xl font-mono font-bold text-amber-400">{timeLeft}</p>
         </div>
-      )}
 
-      <main className="mx-auto max-w-7xl px-4 py-7">
-        <section className="mb-8 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-400">Welcome back,</p>
-            <h2 className="mt-1 text-2xl font-bold sm:text-3xl">{profile.name}</h2>
-          </div>
-          {canClaimDaily ? (
-            <button onClick={handleClaimDaily} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold shadow-lg shadow-emerald-900/40 hover:bg-emerald-500">
-              <Gift size={18} /> Claim ₦100
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-slate-400 border border-slate-700">
-              <Timer size={18} /> Next claim: {timeLeft}
-            </div>
-          )}
-        </section>
-
-        <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
-          <div className={`rounded-2xl border p-6 transition-all duration-500 ${isVip ? "border-amber-400/30 bg-gradient-to-br from-[#2A1D00] via-[#5C4300] to-[#8A6600] shadow-[0_0_30px_rgba(245,158,11,0.15)]" : "border-blue-400/20 bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600"}`}>
-            <div className="flex items-center justify-between">
-              <div className={`flex items-center gap-2 text-sm ${isVip ? "text-amber-100" : "text-blue-100"}`}>
-                <Wallet size={19} />Total Balance
-                {isVip && <Crown size={16} className="text-amber-400" />}
-              </div>
-              <button onClick={() => setBalanceVisible(!balanceVisible)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition">
-                {balanceVisible ? <Eye size={18} /> : <EyeOff size={18} />}
-              </button>
-            </div>
-            <h3 className={`mt-6 text-3xl font-bold sm:text-4xl ${isVip ? "text-amber-50" : "text-white"}`}>
-              {balanceVisible ? formatMoney(wallet.total) : (isUsd ? "$ ••••" : "₦ ••••")}
-            </h3>
-            <p className={`mt-3 text-sm ${isVip ? "text-amber-200/80" : "text-blue-100/80"}`}>
-              Available: {balanceVisible ? formatMoney(wallet.available) : (isUsd ? "$ •••" : "₦ •••")}
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <a href="/deposit" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? "bg-amber-100 text-amber-950 hover:bg-white" : "bg-white text-blue-900 hover:bg-blue-50"}`}><ArrowDownToLine size={18} />Deposit</a>
-              <a href="/withdraw" className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${isVip ? "border-amber-400/30 bg-amber-500/20 text-amber-50 hover:bg-amber-500/30" : "border-white/30 bg-white/10 hover:bg-white/20"}`}><ArrowUpFromLine size={18} />Withdraw</a>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10" : "border-white/8"}`}>
-              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isVip ? "bg-amber-500/10" : "bg-blue-500/10"}`}>
-                <TrendingUp size={22} className={isVip ? "text-amber-400" : "text-blue-400"} />
-              </div>
-              <p className="mt-5 text-sm text-slate-400">Invested</p>
-              <h3 className="mt-2 text-2xl font-bold">{balanceVisible ? formatMoney(actualInvested) : (isUsd ? "$ •••" : "₦ •••")}</h3>
-            </div>
-            <div className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10" : "border-white/8"}`}>
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
-                <CircleDollarSign size={22} className="text-emerald-400" />
-              </div>
-              <p className="mt-5 text-sm text-slate-400">Total Earnings</p>
-              <h3 className="mt-2 text-2xl font-bold text-emerald-400">{balanceVisible ? formatMoney(wallet.earnings) : (isUsd ? "$ •••" : "₦ •••")}</h3>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-9">
-          <h3 className="mb-5 text-lg font-semibold">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <a href="/deposit" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-blue-500/40"}`}>
-              <Wallet size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-blue-400"}`} />
-              <h4 className="font-semibold">Deposit</h4>
-            </a>
-            {profile.vip_tier === "None" ? (
-              <a href="/vip" className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 hover:border-red-500/40">
-                <LockIcon size={23} className="text-red-400 mb-2" />
-                <h4 className="font-semibold">Invest (Locked)</h4>
-              </a>
-            ) : (
-              <a href="/invest" className={`rounded-2xl border p-5 ${isVip ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60" : "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40"}`}>
-                <Unlock size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
-                <h4 className="font-semibold">Invest (Active)</h4>
-              </a>
-            )}
-            <a href="/bonus" className={`rounded-2xl border bg-[#0D1526] p-5 ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-emerald-500/40"}`}>
-              <Gamepad2 size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
-              <h4 className="font-semibold">Bonus Game</h4>
-            </a>
-            <button onClick={() => setShowReferral(true)} className={`rounded-2xl border bg-[#0D1526] p-5 text-left ${isVip ? "border-amber-500/10 hover:border-amber-500/40" : "border-white/8 hover:border-emerald-500/40"}`}>
-              <Users size={23} className={`mb-2 ${isVip ? "text-amber-400" : "text-emerald-400"}`} />
-              <h4 className="font-semibold">Refer & Earn</h4>
-            </button>
-          </div>
-        </section>
-
-        <section className="mt-9">
-          <div className={`rounded-2xl border bg-[#0D1526] p-6 ${isVip ? "border-amber-500/10" : "border-white/10"}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <MessageSquare className={`h-6 w-6 ${isVip ? "text-amber-400" : "text-blue-400"}`} />
-              <h3 className="text-lg font-bold">Global Chat</h3>
-            </div>
-            <div className="space-y-4 max-h-60 overflow-y-auto pr-2">
-              {messages.map((m) => (
-                <div key={m.id} className={`flex gap-3 text-sm ${m.user === profile.name ? "justify-end" : "justify-start"}`}>
-                  {m.user !== profile.name && (
-                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold ${isVip ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>{m.user[0]}</div>
-                  )}
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${m.user === profile.name ? (isVip ? "bg-amber-600 text-white rounded-tr-sm" : "bg-blue-600 text-white rounded-tr-sm") : "bg-slate-800 text-slate-200 rounded-tl-sm"}`}>
-                    {m.user !== profile.name && <p className={`text-xs font-bold mb-1 ${isVip ? "text-amber-400" : "text-blue-400"}`}>{m.user}</p>}
-                    <p>{m.text}</p>
-                    <p className="text-[10px] text-right mt-1 opacity-70">{m.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <form onSubmit={sendMessage} className="mt-4 flex gap-2">
-              <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Type a message..." className="flex-1 rounded-xl bg-slate-950 px-4 py-3 text-sm outline-none" />
-              <button type="submit" className={`rounded-xl px-4 py-3 text-sm font-semibold ${isVip ? "bg-amber-600 hover:bg-amber-500" : "bg-blue-600 hover:bg-blue-500"}`}><Send size={18} /></button>
-            </form>
-          </div>
-        </section>
-      </main>
-
-      {showReferral && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onMouseDown={(e) => e.target === e.currentTarget && setShowReferral(false)}>
-          <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0D1526] p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10"><Gift size={24} className="text-emerald-400" /></div>
-                <div><h3 className="text-xl font-bold">Invite & Earn</h3><p className="text-sm text-slate-400">Share your link to earn.</p></div>
-              </div>
-              <button onClick={() => setShowReferral(false)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10"><X size={20} /></button>
-            </div>
-            <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/6 p-5">
-              <p className="text-sm text-emerald-200">Reward for sharing your link</p>
-              <p className="mt-2 text-3xl font-bold text-emerald-300">{formatMoney(1000)} <span className="text-sm font-normal text-emerald-500/70">(Per person)</span></p>
-            </div>
-            {shareMessage && (
-              <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
-                <p className="font-bold text-emerald-400 text-sm">{shareMessage}</p>
-              </div>
-            )}
-            <div className="mt-6">
-              <input readOnly value={`${window.location.origin}/signup?ref=${profile.referral_code || ""}`} onFocus={(e) => e.target.select()} className="w-full rounded-xl border border-white/10 bg-[#070D1A] px-4 py-3 text-sm" />
-              <div className="mt-3 flex gap-2">
-                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/signup?ref=${profile.referral_code || ""}`); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800 py-3 font-semibold hover:bg-slate-700 transition">
-                  {copied ? <Check size={18} /> : <Copy size={18} />}{copied ? "Copied!" : "Copy Link"}
-                </button>
-                <button onClick={handleShare} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold hover:bg-emerald-500 transition">
-                  <RefreshCw size={18} /> Check Rewards
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t px-2 py-2 backdrop-blur-xl transition-colors duration-500 ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/[0.07] bg-[#070D1A]/95"}`}>
-        <div className="mx-auto grid max-w-lg grid-cols-6">
-          <a href="/home" className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${isVip ? "bg-amber-500/10 text-amber-400" : "bg-blue-500/10 text-blue-400"}`}><HomeIcon size={20} />Home</a>
-          <a href="/invest" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><TrendingUp size={20} />Invest</a>
-          <a href="/vip" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Crown size={20} />VIP</a>
-          <a href="/bonus" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><Gamepad2 size={20} />Bonus</a>
-          <a href="/withdraw" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><ArrowUpFromLine size={20} />Withdraw</a>
-          <a href="/settings" className="flex min-h-14 flex-col items-center justify-center gap-1 text-xs text-slate-500"><SettingsIcon size={20} />Settings</a>
-        </div>
-      </nav>
+        <p className="mt-6 text-xs text-slate-400">Your funds are being processed and will arrive in your bank account shortly.</p>
+        <a href="/home" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white text-black px-6 py-3 text-sm font-bold hover:bg-gray-200">
+          Back to Dashboard
+        </a>
+      </div>
     </div>
   );
 }
 
-function AdminDashboard() {
-  const [withdrawals, setWithdrawals] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(null);
+/* =========================== VIP =========================== */
 
-  const loadWithdrawals = async () => {
-    const { data } = await api.getAdminWithdrawals();
-    setWithdrawals(data || []);
+export function VIP() {
+  const navigate = useNavigate();
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#1A1500] to-black pb-24 text-white">
+      <header className="border-b border-amber-500/20 bg-black/50 backdrop-blur-xl">
+        <div className="mx-auto flex h-20 items-center gap-4 px-4 max-w-2xl">
+          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-white"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold text-amber-400">VIP Membership</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <div className="text-center mb-8">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-500/10 mb-4 border border-amber-500/30 shadow-[0_0_30px_rgba(245,158,11,0.2)]">
+            <Crown size={40} className="text-amber-400" />
+          </div>
+          <h2 className="text-3xl font-bold text-amber-400">Upgrade to VIP</h2>
+          <p className="mt-2 text-amber-200/60">Unlock higher returns, faster withdrawals, and an instant investment bonus.</p>
+        </div>
+        <div className="space-y-4">
+          <button onClick={() => navigate(`/vip/checkout?tier=VIP 1&price=4500&bonus=5000`)} className="w-full rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500 to-yellow-600 p-6 text-left transition hover:scale-[1.02] shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+            <div className="flex justify-between items-center mb-2">
+              <p className="text-xl font-black text-black">VIP 1 (Entry)</p>
+              <p className="text-xl font-black text-black">₦4,500</p>
+            </div>
+            <p className="text-sm font-bold text-black/80">+ ₦5,000 Investment Bonus</p>
+          </button>
+          <button onClick={() => navigate(`/vip/checkout?tier=VIP 2&price=8500&bonus=10000`)} className="w-full rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-400 to-yellow-500 p-6 text-left transition hover:scale-[1.02] shadow-[0_0_20px_rgba(245,158,11,0.4)]">
+            <div className="flex justify-between items-center mb-2">
+              <p className="text-xl font-black text-black">VIP 2 (Pro)</p>
+              <p className="text-xl font-black text-black">₦8,500</p>
+            </div>
+            <p className="text-sm font-bold text-black/80">+ ₦10,000 Investment Bonus</p>
+          </button>
+          <button onClick={() => navigate(`/vip/checkout?tier=VIP 3&price=15000&bonus=17000`)} className="w-full rounded-2xl border border-amber-500/40 bg-gradient-to-r from-yellow-400 to-amber-600 p-6 text-left transition hover:scale-[1.02] shadow-[0_0_20px_rgba(245,158,11,0.5)]">
+            <div className="flex justify-between items-center mb-2">
+              <p className="text-xl font-black text-black">VIP 3 (Elite)</p>
+              <p className="text-xl font-black text-black">₦15,000</p>
+            </div>
+            <p className="text-sm font-bold text-black/80">+ ₦17,000 Investment Bonus</p>
+          </button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export function VIPCheckout() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const params = new URLSearchParams(window.location.search);
+  const tier = params.get("tier");
+  const price = Number(params.get("price"));
+
+  async function pay() {
+    setLoading(true); setError("");
+    const { data: { user } } = await supabase.auth.getUser();
+    const r = await api.depositInit(price, "card", user.email, true);
     setLoading(false);
-  };
-
-  useEffect(() => { loadWithdrawals(); }, []);
-
-  const handleApprove = async (w) => {
-    if (!window.confirm(`Approve ₦${w.amount.toLocaleString()} to ${w.account_name} (${w.bank_name})?`)) return;
-    setProcessing(w.id);
-    await api.approveWithdrawal(w.id, w.user_id, w.amount);
-    await loadWithdrawals();
-    setProcessing(null);
-  };
-
-  const handleReject = async (w) => {
-    if (!window.confirm(`Reject withdrawal and refund ₦${w.amount.toLocaleString()}?`)) return;
-    setProcessing(w.id);
-    await api.rejectWithdrawal(w.id, w.user_id, w.amount);
-    await loadWithdrawals();
-    setProcessing(null);
-  };
-
-  if (loading) return <LoadingScreen />;
+    if (r?.authorization_url) {
+      localStorage.setItem("pending_vip_tier", tier);
+      localStorage.setItem("pending_vip_price", price);
+      window.location.href = r.authorization_url;
+    } else if (r?.url) {
+      localStorage.setItem("pending_vip_tier", tier);
+      localStorage.setItem("pending_vip_price", price);
+      window.location.href = r.url;
+    } else {
+      setError(r?.error || "Failed to initialize payment.");
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-[#070D1A] p-6 text-white">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">Admin Panel</h1>
-            <p className="text-slate-400 mt-1">Manage pending withdrawals</p>
-          </div>
-          <button onClick={() => window.location.href = "/home"} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 hover:bg-white/10">Back to App</button>
+    <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
+      <header className="border-b border-amber-500/20 bg-[#070D1A]/95 backdrop-blur-xl">
+        <div className="mx-auto flex h-20 max-w-xl items-center gap-4 px-4">
+          <a href="/vip" className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5"><ArrowLeft size={19} /></a>
+          <h1 className="text-xl font-bold text-amber-400">VIP Checkout</h1>
         </div>
+      </header>
+      <main className="mx-auto max-w-xl px-4 py-10">
+        <div className="rounded-3xl bg-gradient-to-br from-amber-900 to-black border border-amber-500/30 p-6 text-center shadow-2xl">
+          <Crown className="h-12 w-12 text-amber-400 mx-auto mb-4" />
+          <p className="text-sm text-amber-200 uppercase tracking-widest font-bold">Upgrading To</p>
+          <h2 className="mt-2 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500">{tier}</h2>
+          <p className="mt-4 text-3xl font-bold">₦{price.toLocaleString()}</p>
+        </div>
+        <div className="mt-8 rounded-2xl border border-white/10 bg-[#0D1526] p-6">
+          <h3 className="font-bold mb-4">Payment Method</h3>
+          {error && <div className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+          <button onClick={pay} disabled={loading} className="flex w-full items-center justify-between rounded-xl bg-amber-600 px-5 py-4 font-bold text-black transition hover:bg-amber-500 disabled:opacity-60">
+            <div className="flex items-center gap-3">
+              <CreditCard size={22} />
+              <span>Pay with Paystack</span>
+            </div>
+            {loading ? <Loader2 className="animate-spin" size={20} /> : <ArrowRight size={20} />}
+          </button>
+          <p className="mt-4 text-xs text-center text-slate-500">Secure payment powered by Paystack. Once successful, your VIP status and bonus will be applied instantly.</p>
+        </div>
+      </main>
+    </div>
+  );
+}
 
-        {withdrawals.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-10 text-center">
-            <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold">All caught up!</h2>
-            <p className="text-slate-400">No pending withdrawals at the moment.</p>
+/* =========================== BONUS GAME =========================== */
+
+export function BonusGame() {
+  const [points, setPoints] = useState(0);
+  const [claiming, setClaiming] = useState(false);
+  const [clickSpeed, setClickSpeed] = useState(0);
+  const [toastMsg, setToastMsg] = useState("");
+  const [emojis, setEmojis] = useState([]);
+  const clicks = useRef([]);
+  const moneyValue = Math.floor(points / 2);
+  const goal = 1000;
+
+  const handleTap = (e) => {
+    setPoints((p) => p + 1);
+    const now = Date.now();
+    clicks.current.push(now);
+    clicks.current = clicks.current.filter((t) => now - t < 1000);
+    const currentSpeed = clicks.current.length;
+    setClickSpeed(currentSpeed);
+
+    if (currentSpeed >= 4 && Math.random() > 0.3) {
+      const emojiList = ["😂", "🤣", "💨", "😮", "🔥"];
+      const randomEmoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+      
+      const rect = e.target.getBoundingClientRect();
+      const x = rect.left + Math.random() * rect.width;
+      const y = rect.top + Math.random() * rect.height;
+
+      const newEmoji = {
+        id: Date.now() + Math.random(),
+        emoji: randomEmoji,
+        x,
+        y,
+        size: 40 + Math.random() * 40,
+      };
+
+      setEmojis((prev) => [...prev, newEmoji]);
+
+      setTimeout(() => {
+        setEmojis((prev) => prev.filter((item) => item.id !== newEmoji.id));
+      }, 1500);
+    }
+  };
+
+  const handleClaim = async () => {
+    if (points < goal) return;
+    setClaiming(true);
+    await api.claimBonus(moneyValue);
+    setClaiming(false);
+    setToastMsg(`You have claimed ₦${moneyValue}! It will show on your dashboard shortly.`);
+    setPoints(0);
+  };
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      clicks.current = clicks.current.filter((t) => now - t < 1000);
+      setClickSpeed(clicks.current.length);
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+
+  const maxSpeed = 15;
+  const speedPercentage = Math.min(clickSpeed / maxSpeed, 1);
+  const rotation = -85 + speedPercentage * 170;
+
+  return (
+    <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+
+      <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+        {emojis.map((e) => (
+          <span
+            key={e.id}
+            className="absolute animate-float-up"
+            style={{
+              left: e.x,
+              top: e.y,
+              fontSize: e.size,
+              animation: "floatUp 1.5s ease-out forwards",
+            }}
+          >
+            {e.emoji}
+          </span>
+        ))}
+      </div>
+
+      <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
+      <p className="text-sm text-slate-400 mb-6 text-center px-4">2 points = ₦1</p>
+
+      <div className="w-64 h-32 relative overflow-hidden mb-6 flex justify-center items-end">
+        <div className="w-64 h-64 rounded-full border-[12px] border-slate-800 absolute -bottom-32"></div>
+        <div className="w-64 h-64 rounded-full border-[12px] border-transparent border-t-emerald-500/50 border-r-amber-500/50 absolute -bottom-32 rotate-[-45deg]"></div>
+        <div className="w-64 h-64 rounded-full border-[12px] border-transparent border-r-red-500/50 border-b-red-500/50 absolute -bottom-32 rotate-[45deg]"></div>
+        <div className="absolute bottom-0 w-1 h-28 bg-white origin-bottom rounded-t-full transition-transform duration-100 ease-out shadow-[0_0_15px_rgba(255,255,255,0.8)]" style={{ transform: `rotate(${rotation}deg)` }}></div>
+        <div className="absolute bottom-0 w-4 h-4 bg-white rounded-full shadow-lg"></div>
+        <div className="absolute bottom-4 flex flex-col items-center">
+          <span className="text-2xl font-black text-white">{clickSpeed}</span>
+          <span className="text-[10px] text-slate-400 uppercase tracking-widest">Clicks / Sec</span>
+        </div>
+      </div>
+
+      <div className="mb-6 flex flex-col items-center">
+        <div className="flex items-baseline gap-2">
+          <span className="text-5xl font-extrabold text-blue-400">{points}</span>
+          <span className="text-lg text-slate-400">/ {goal}</span>
+        </div>
+        <p className="mt-2 text-sm text-emerald-400">Value: ₦{moneyValue.toLocaleString()}</p>
+      </div>
+
+      <button onClick={handleTap} className="group relative flex h-60 w-60 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-[0_0_50px_rgba(37,99,235,0.5)] active:scale-90 transition-transform z-10">
+        <div className="absolute inset-2 rounded-full border-2 border-white/20 border-dashed animate-spin-slow"></div>
+        <Wallet className="h-24 w-24 text-white opacity-40 group-hover:opacity-60 transition-opacity" />
+      </button>
+
+      <div className="mt-8 w-full max-w-sm z-10">
+        <button onClick={handleClaim} disabled={points < goal || claiming} className="w-full rounded-2xl bg-emerald-500 py-4 font-bold text-white shadow-lg shadow-emerald-900/30 disabled:opacity-40 transition-all">
+          {claiming ? "Claiming..." : points < goal ? `Claim ₦${moneyValue.toLocaleString()} (Need ${goal - points} more)` : `Claim ₦${moneyValue.toLocaleString()}`}
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes floatUp {
+          0% { transform: translateY(0) scale(1); opacity: 1; }
+          100% { transform: translateY(-150px) scale(1.5); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* =========================== INVEST =========================== */
+
+export function Invest() {
+  const [plans, setPlans] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [amount, setAmount] = useState("");
+  const [cryptoPeriod, setCryptoPeriod] = useState("30 Days");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [popup, setPopup] = useState(null);
+  const [profile, setProfile] = useState({ vip_tier: "None" });
+  const [wallet, setWallet] = useState({ available: 0 });
+  const [recentInvestment, setRecentInvestment] = useState(null);
+
+  const estateImages = [
+    { name: "Standard Estate", img: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&fit=crop&q=80&w=600", rate: 8 },
+    { name: "Classic Duplex", img: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=600", rate: 10 },
+    { name: "Modern Villa", img: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=600", rate: 12 },
+    { name: "Luxury Mansion", img: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&q=80&w=600", rate: 15 },
+    { name: "Oceanfront Villa", img: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&q=80&w=600", rate: 18 },
+    { name: "Prime Commercial Tower", img: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600", rate: 22 },
+  ];
+
+  useEffect(() => {
+    api.plans().then(({ data }) => setPlans(data || []));
+    api.profile().then(({ data }) => data && setProfile(data));
+    api.wallet().then(({ data }) => data && setWallet(data));
+    
+    api.portfolio().then(({ data }) => {
+      if (data && data.length > 0) {
+        const recent = data.find(inv => {
+          const timeDiff = Date.now() - new Date(inv.started_at).getTime();
+          return timeDiff < 86400000; 
+        });
+        if (recent) setRecentInvestment(recent);
+      }
+    });
+  }, []);
+
+  async function submit() {
+    setError("");
+    if (profile.vip_tier === "None") return setError("You must upgrade to VIP before investing.");
+    if (recentInvestment) return setError(`You can only invest once per day. Your last investment was on ${new Date(recentInvestment.started_at).toLocaleDateString()}.`);
+
+    const n = Number(amount);
+    const minAmt = selected?.min_amount || 3000;
+    
+    if (!n || n < minAmt) return setError(`Minimum investment is ₦${minAmt.toLocaleString()}`);
+    if (n > wallet.available) return setError(`Insufficient funds. Your wallet balance is ₦${wallet.available.toLocaleString()}`);
+
+    setSubmitting(true);
+    let matured_at = null;
+    if (selected.name === "Crypto Index") {
+      const days = cryptoPeriod === "30 Days" ? 30 : cryptoPeriod === "3 Months" ? 90 : cryptoPeriod === "6 Months" ? 180 : 365;
+      matured_at = new Date(Date.now() + days * 86400000).toISOString();
+    }
+    const r = await api.invest(selected.id, n, 0, matured_at);
+    setSubmitting(false);
+
+    if (r?.success) {
+      if (selected.name === "Real Estate") setPopup("Your money will grow in the next 4 weeks");
+      else window.location.href = "/portfolio";
+    } else {
+      setError(r?.error || "Failed to process investment.");
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95 p-4 flex justify-between items-center">
+        <a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a>
+        <p className="text-sm font-bold text-emerald-400">Available: ₦{wallet.available.toLocaleString()}</p>
+      </header>
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        <h2 className="text-3xl font-bold mb-8">Choose an investment</h2>
+
+        {profile.vip_tier === "None" && (
+          <div className="mb-8 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-300 flex items-center justify-between">
+            <span>You must upgrade to VIP to access these investments.</span>
+            <Link to="/vip" className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-sm">Go VIP</Link>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {withdrawals.map((w) => (
-              <div key={w.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="bg-amber-500/20 text-amber-400 text-xs font-bold px-2 py-1 rounded">PENDING</span>
-                    <span className="text-sm text-slate-400">{new Date(w.created_at).toLocaleString()}</span>
-                  </div>
-                  <p className="font-bold text-lg">₦{w.amount.toLocaleString()}</p>
-                  <p className="text-sm text-slate-300 mt-1">{w.account_name} - {w.account_number} ({w.bank_name})</p>
+        )}
+
+        {recentInvestment && (
+          <div className="mb-8 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-300">
+            <p className="font-bold">Daily Limit Reached</p>
+            <p className="text-sm mt-1">You can only invest once per day. You invested on {new Date(recentInvestment.started_at).toLocaleString()}.</p>
+          </div>
+        )}
+
+        <div className="grid gap-5 md:grid-cols-2">
+          {plans.map((p) => (
+            <div key={p.id} className={`rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col relative overflow-hidden ${profile.vip_tier === "None" || recentInvestment ? "opacity-60" : ""}`}>
+              {(profile.vip_tier === "None" || recentInvestment) && (
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-10 flex items-center justify-center">
+                  <span className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><LockIcon size={16} /> {recentInvestment ? "1 Per Day Limit" : "VIP Required"}</span>
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                  <button onClick={() => handleApprove(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-emerald-600 px-6 py-3 font-semibold hover:bg-emerald-500 disabled:opacity-50 text-sm">
-                    {processing === w.id ? "..." : "Approve"}
-                  </button>
-                  <button onClick={() => handleReject(w)} disabled={processing === w.id} className="flex-1 md:flex-none rounded-xl bg-red-600/10 border border-red-500/20 text-red-400 px-6 py-3 font-semibold hover:bg-red-600/20 disabled:opacity-50 text-sm">
-                    Reject
-                  </button>
-                </div>
+              )}
+              <h3 className="text-xl font-bold">{p.name}</h3>
+              <p className="text-sm text-slate-400 mt-1">{p.type}</p>
+              <p className="text-sm mt-3">Return: <span className="font-semibold text-blue-400">{p.expected_return}%</span></p>
+              <p className="text-xs text-slate-500 mt-1">Min: ₦{Number(p.min_amount).toLocaleString()}</p>
+              <button onClick={() => { if (profile.vip_tier !== "None" && !recentInvestment) { setSelected(p); setAmount(""); setError(""); } }} disabled={profile.vip_tier === "None" || !!recentInvestment} className="mt-6 rounded-xl bg-blue-600 py-3 text-sm font-semibold w-full disabled:bg-slate-800">Select Plan</button>
+            </div>
+          ))}
+        </div>
+      </main>
+
+      {selected && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0D1526] p-6 my-auto">
+            <h3 className="text-xl font-bold">Invest in {selected.name}</h3>
+            <div className="mt-4">
+              <label className="text-sm mb-1 block">Amount</label>
+              <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={`Min ${selected.min_amount}`} className="w-full rounded-xl bg-slate-950 px-4 py-3 outline-none" />
+            </div>
+            {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => setSelected(null)} className="flex-1 rounded-xl border border-white/10 py-3">Cancel</button>
+              <button onClick={submit} disabled={submitting} className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold disabled:opacity-60">{submitting ? "..." : "Confirm"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {popup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 p-6 text-center">
+            <h3 className="text-xl font-bold text-green-400">Success!</h3>
+            <p className="mt-2 text-sm text-slate-300">{popup}</p>
+            <button onClick={() => { setPopup(null); window.location.href = "/portfolio"; }} className="mt-6 w-full rounded-xl bg-blue-600 py-3 font-semibold">OK</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================== PORTFOLIO (History Only) =========================== */
+
+export function Portfolio() {
+  const [holdings, setHoldings] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [claiming, setClaiming] = useState(null); 
+  const [claimed, setClaimed] = useState({}); 
+  const [toastMsg, setToastMsg] = useState("");
+  const [, setTick] = useState(0);
+
+  const load = async () => {
+    const [p, h] = await Promise.all([api.portfolio(), api.history()]);
+    setHoldings(p.data || []);
+    setHistory(h.data || []);
+  };
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fmt = (a) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(a || 0);
+
+  const getTimeLeft = (lastClaim) => {
+    if (!lastClaim) return null;
+    const next = new Date(lastClaim).getTime() + 86400000;
+    const diff = next - Date.now();
+    if (diff <= 0) return null;
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    return `${h}h ${m}m ${s}s`;
+  };
+
+  async function handleClaim(h) {
+    if (claimed[h.id]) {
+      setToastMsg("You must wait exactly 24 hours between claims.");
+      return;
+    }
+
+    const canClaim = !h.last_daily_claim || Date.now() - new Date(h.last_daily_claim).getTime() >= 86400000;
+    if (!canClaim) { 
+      setToastMsg("You must wait exactly 24 hours between claims."); 
+      return; 
+    }
+
+    setClaimed(prev => ({ ...prev, [h.id]: true }));
+    setClaiming(h.id);
+
+    let claimAmount = 0;
+    const planName = h.plans?.name || "";
+    
+    if (planName.includes("Affiliate")) {
+      claimAmount = Math.floor(Math.random() * (2000 - 500 + 1) + 500);
+    } else {
+      const percentage = h.plans.expected_return / 100;
+      claimAmount = h.amount * percentage;
+    }
+
+    const r = await api.claimInvestment(h.id, claimAmount);
+    
+    if (r?.success) {
+      await load();
+      setToastMsg(`You have successfully claimed ${fmt(claimAmount)}!`);
+    } else {
+      setToastMsg(r?.error || "Failed to claim. Please try again.");
+      setClaimed(prev => ({ ...prev, [h.id]: false }));
+    }
+    setClaiming(null);
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 pb-24 text-white p-4">
+      {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
+      <header className="mb-6"><a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a></header>
+      <h1 className="text-2xl font-bold mb-4">My Portfolio</h1>
+
+      {/* Active Investments mapped directly, no tabs */}
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 mb-10">
+        {holdings.map((h) => {
+          const timeLeft = getTimeLeft(h.last_daily_claim);
+          const isLocallyClaimed = claimed[h.id];
+          const canClaim = !timeLeft && !isLocallyClaimed;
+          
+          let displayProfit = 0;
+          const planName = h.plans?.name || "";
+          if (planName.includes("Affiliate")) {
+              displayProfit = 500; 
+          } else {
+              displayProfit = h.amount * (h.plans.expected_return / 100);
+          }
+
+          return (
+            <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6 flex flex-col justify-between">
+              <div>
+                <p className="font-bold">{h.plans?.name}</p>
+                <p className="text-2xl mt-2">{fmt(h.amount)}</p>
+                <p className="text-xs text-slate-500 mt-1">Status: {h.status}</p>
               </div>
-            ))}
-          </div>
+              {h.status === "active" && (
+                <div className="mt-4">
+                  {(!canClaim) && (
+                    <p className="text-center text-xs text-amber-400 font-mono mb-2 flex items-center justify-center gap-1">
+                      <Timer size={14} /> Next claim in: {timeLeft || "24h 0m 0s"}
+                    </p>
+                  )}
+                  <button 
+                    onClick={() => handleClaim(h)} 
+                    disabled={!canClaim || claiming === h.id} 
+                    className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${canClaim ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 cursor-not-allowed"}`}
+                  >
+                    {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${planName.includes("Affiliate") ? "Bonus" : fmt(displayProfit)}` : "Wait for timer"}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <h2 className="text-2xl font-bold mb-4">Transaction History</h2>
+      <div className="space-y-3">
+        {history.length === 0 ? (
+          <p className="text-slate-500 text-sm">No transactions yet.</p>
+        ) : (
+          history.map((tx) => (
+            <div key={tx.id} className="rounded-xl border border-white/10 bg-[#0D1526] p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold capitalize">{tx.type.replace("_", " ")}</p>
+                <p className="text-xs text-slate-500">{new Date(tx.created_at).toLocaleString()}</p>
+              </div>
+              <p className={`font-bold ${tx.type === "withdraw" ? "text-red-400" : "text-emerald-400"}`}>
+                {tx.type === "withdraw" ? "-" : "+"}{fmt(tx.amount)}
+              </p>
+            </div>
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function App() {
+/* =========================== SETTINGS =========================== */
+
+export function Settings() {
+  const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "" });
+  const [uploading, setUploading] = useState(false);
+  const [pendingWithdrawal, setPendingWithdrawal] = useState(null);
+  const [timeLeft, setTimeLeft] = useState("");
+  const [, setTick] = useState(0);
+
+  useEffect(() => { 
+    api.profile().then(({ data }) => data && setProfile(data)); 
+    supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(1).then(({ data }) => {
+      if (data && data.length > 0) setPendingWithdrawal(data[0]);
+    });
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingWithdrawal) return;
+    const endTime = new Date(pendingWithdrawal.created_at).getTime() + (3 * 60 * 60 * 1000); // 3 Hours
+    const diff = endTime - Date.now();
+    if (diff <= 0) setTimeLeft("Processing...");
+    else {
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${h}h ${m}m ${s}s`);
+    }
+  }, [pendingWithdrawal, timeLeft]);
+
+  async function handleAvatarUpload(e) {
+    try {
+      setUploading(true);
+      const file = e.target.files[0];
+      if (!file) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      const url = await api.uploadAvatar(file, user.id);
+      setProfile({ ...profile, avatar_url: url });
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/terms" element={<Terms />} />
+    <div className="min-h-screen bg-slate-950 pb-24 text-white">
+      <header className="border-b border-blue-400/10 bg-slate-950/95">
+        <div className="mx-auto flex h-20 items-center gap-4 px-4 max-w-2xl">
+          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"><ArrowLeft className="h-5 w-5" /></a>
+          <h1 className="text-xl font-bold">Settings</h1>
+        </div>
+      </header>
+      <main className="mx-auto max-w-3xl px-4 py-8 space-y-4">
+        
+        <div className="rounded-2xl border border-blue-400/10 bg-slate-900 p-5">
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-16 overflow-hidden rounded-full border border-blue-400/30 bg-blue-500/10 flex items-center justify-center">
+              {profile.avatar_url ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" /> : <User className="h-8 w-8 text-blue-400" />}
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">{profile.name}</p>
+              <p className="text-sm text-slate-500">{profile.email}</p>
+            </div>
+            <label className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold hover:bg-blue-500 transition">
+              {uploading ? "Uploading..." : "Upload Photo"}
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
+            </label>
+          </div>
+        </div>
 
-      <Route element={<ProtectedRoute />}>
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/vip" element={<VIP />} />
-        <Route path="/vip/checkout" element={<VIPCheckout />} />
-        <Route path="/invest" element={<Invest />} />
-        <Route path="/bonus" element={<BonusGame />} />
-        <Route path="/deposit" element={<Deposit />} />
-        <Route path="/deposit/payment" element={<DepositPayment />} />
-        <Route path="/deposit/card" element={<DepositCard />} />
-        <Route path="/deposit/bitcoin" element={<DepositBitcoin />} />
-        <Route path="/withdraw" element={<Withdraw />} />
-        <Route path="/withdraw/account" element={<WithdrawAccount />} />
-        <Route path="/withdraw/success" element={<WithdrawSuccess />} />
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-      </Route>
+        {pendingWithdrawal && (
+          <div className="rounded-2xl border border-amber-500/30 bg-[#1A1500] p-5 shadow-[0_0_20px_rgba(245,158,11,0.1)]">
+            <div className="flex items-center gap-3 mb-2">
+              <Clock className="h-5 w-5 text-amber-500" />
+              <h3 className="font-bold text-amber-500">Withdrawal Pending</h3>
+            </div>
+            <p className="text-sm text-slate-300">Your withdrawal of ₦{Number(pendingWithdrawal.amount).toLocaleString()} is being processed.</p>
+            <div className="mt-3 flex items-center justify-between bg-black/40 p-3 rounded-xl border border-amber-500/20">
+              <span className="text-xs text-slate-400">Completes in:</span>
+              <span className="font-mono text-amber-400 font-bold">{timeLeft}</span>
+            </div>
+          </div>
+        )}
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <a href="/help" className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm">Help Center & Investment Guide</a>
+        <button onClick={async () => { await api.logout(); window.location.href = "/"; }} className="flex w-full items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-red-400"><LogOut className="h-5 w-5" /> Log Out</button>
+      </main>
+    </div>
   );
 }
 
-// ✅ DEFAULT EXPORTED HERE CORRECTLY
-export default App;
+/* =========================== HELP =========================== */
+
+export function Help() {
+  return (
+    <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
+      <div className="mx-auto max-w-4xl pb-20">
+        <a href="/home" className="mb-8 inline-flex items-center gap-2 text-sm text-slate-400"><ArrowLeft size={18} />Back</a>
+        <div className="mb-8">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400"><HelpCircle size={28} /></div>
+          <h1 className="text-3xl font-bold">Investment Guide</h1>
+        </div>
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-indigo-500/20 bg-[#0D1526] p-6">
+            <h2 className="text-xl font-bold text-indigo-400 flex items-center gap-2"><Zap size={20} /> 1. Growth Portfolio</h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">This plan pays you a daily profit. Once you invest, you must go to your Portfolio and tap "Claim Daily". The initial capital is locked for 7 days.</p>
+          </div>
+          <div className="rounded-2xl border border-emerald-500/20 bg-[#0D1526] p-6">
+            <h2 className="text-xl font-bold text-emerald-400 flex items-center gap-2"><TrendingUp size={20} /> 2. Affiliate Marketing</h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">Share your referral link on WhatsApp or TikTok. The system will simulate buyers clicking your link, sending you random bonuses between ₦3,000 and ₦20,000.</p>
+          </div>
+          <div className="rounded-2xl border border-blue-500/20 bg-[#0D1526] p-6">
+            <h2 className="text-xl font-bold text-blue-400 flex items-center gap-2"><Rocket size={20} /> 3. Real Estate</h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">Select from 6 estate tiers. The bigger the estate, the higher the ROI. Your funds are locked for a randomized number of weeks.</p>
+          </div>
+          <div className="rounded-2xl border border-amber-500/20 bg-[#0D1526] p-6">
+            <h2 className="text-xl font-bold text-amber-400 flex items-center gap-2"><Timer size={20} /> 4. Crypto Index</h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">Choose how long you want to lock your funds (30 days to 1 year). The longer the lock period, the higher your returns.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
