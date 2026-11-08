@@ -666,8 +666,9 @@ export function BonusGame() {
     const currentSpeed = clicks.current.length;
     setClickSpeed(currentSpeed);
 
+    // Removed 😂 and 🤣. Using 💨, 😮, 🔥
     if (currentSpeed >= 4 && Math.random() > 0.3) {
-      const emojiList = ["😂", "🤣", "💨", "😮", "🔥"];
+      const emojiList = ["💨", "😮", "🔥"];
       const randomEmoji = emojiList[Math.floor(Math.random() * emojiList.length)];
       
       const rect = e.target.getBoundingClientRect();
@@ -1209,7 +1210,7 @@ export function Help() {
   );
 }
 
-/* =========================== CHAT (User & Admin) =========================== */
+/* =========================== CHAT (Beautiful Sidebar) =========================== */
 
 export function Chat() {
   const [messages, setMessages] = useState([]);
@@ -1217,7 +1218,6 @@ export function Chat() {
   const [profile, setProfile] = useState({});
   const [chatMode, setChatMode] = useState("admin"); // "admin" or "friend"
   const [targetUsername, setTargetUsername] = useState("");
-  const [activeFriend, setActiveFriend] = useState(null);
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -1228,9 +1228,15 @@ export function Chat() {
 
   const loadMessages = async (targetId) => {
     if (!targetId && targetId !== "admin") return;
+    setLoading(true);
     const { data } = await api.getMessages(targetId);
     setMessages(data || []);
+    setLoading(false);
   };
+
+  useEffect(() => {
+    if (chatMode === "admin") loadMessages("admin");
+  }, [chatMode]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1249,55 +1255,58 @@ export function Chat() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070D1A] p-4 text-white">
-      <header className="mb-4">
-        <a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a>
-        <h1 className="text-2xl font-bold mt-2">Inbox</h1>
+    <div className="min-h-screen bg-[#0B1120] flex flex-col">
+      <header className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0D1526]">
+        <a href="/home" className="flex items-center gap-2 text-white"><ArrowLeft size={20} /> Back</a>
+        <h1 className="text-lg font-bold text-white">Inbox</h1>
+        <div className="w-8"></div>
       </header>
 
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => { setChatMode("admin"); setTargetUsername(""); setActiveFriend(null); loadMessages("admin"); }} className={`px-4 py-2 rounded-xl text-sm ${chatMode === "admin" ? 'bg-blue-600' : 'bg-slate-800'}`}>Admin</button>
-        <button onClick={() => setChatMode("friend")} className={`px-4 py-2 rounded-xl text-sm ${chatMode === "friend" ? 'bg-blue-600' : 'bg-slate-800'}`}>Friends</button>
-      </div>
-
-      {chatMode === "friend" && (
-        <div className="mb-4 space-y-2">
-          <input 
-            placeholder="Type @username to chat..." 
-            value={targetUsername} 
-            onChange={e => setTargetUsername(e.target.value.replace("@", ""))}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 outline-none" 
-          />
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {friends.map(f => (
-              <button key={f.id} onClick={() => { setTargetUsername(f.profiles.username); setActiveFriend(f); loadMessages(f.friend_id); }} className={`px-3 py-1 rounded-lg text-xs whitespace-nowrap ${targetUsername === f.profiles.username ? 'bg-blue-600' : 'bg-slate-800'}`}>
-                @{f.profiles.username}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="bg-[#0D1526] rounded-2xl p-4 h-[60vh] overflow-y-auto mb-4 border border-white/10">
-        {messages.map(m => (
-          <div key={m.id} className={`mb-3 flex ${m.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-3 rounded-xl max-w-[80%] ${m.sender_id === profile.id ? 'bg-blue-600' : 'bg-slate-800'}`}>
-              <p className="text-sm">{m.message}</p>
-              <p className="text-[10px] text-white/50 mt-1">{new Date(m.created_at).toLocaleTimeString()}</p>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar for Friends/Admin */}
+        <div className="w-1/3 border-r border-white/10 bg-[#0D1526] flex flex-col">
+          <button onClick={() => setChatMode("admin")} className={`p-4 flex items-center gap-3 ${chatMode === "admin" ? "bg-blue-600/20 border-l-4 border-blue-500" : "hover:bg-white/5"}`}>
+            <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center"><ShieldCheck size={20} className="text-white" /></div>
+            <div className="text-left text-white"><p className="font-bold text-sm">Admin</p><p className="text-xs text-slate-400">Support</p></div>
+          </button>
+          
+          <div className="p-4 border-t border-white/10">
+            <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-widest">Friends</p>
+            <div className="space-y-2 overflow-y-auto">
+              {friends.map(f => (
+                <button key={f.id} onClick={() => { setChatMode("friend"); setTargetUsername(f.profiles.username); loadMessages(f.friend_id); }} className={`w-full flex items-center gap-3 p-2 rounded-lg ${targetUsername === f.profiles.username ? 'bg-slate-800' : 'hover:bg-white/5'}`}>
+                  <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{f.profiles.name[0]}</div>
+                  <p className="text-sm text-white truncate">{f.profiles.name}</p>
+                </button>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
+        </div>
 
-      <form onSubmit={handleSendMessage} className="flex gap-2">
-        <input 
-          value={newMsg} 
-          onChange={e => setNewMsg(e.target.value)} 
-          placeholder={chatMode === "admin" ? "Message Admin..." : `Message @${targetUsername}...`} 
-          className="flex-1 bg-slate-900 rounded-xl px-4 py-3 outline-none" 
-        />
-        <button className="bg-blue-600 px-4 py-3 rounded-xl"><Send size={20} /></button>
-      </form>
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col bg-[#070D1A]">
+          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+            {loading ? <p className="text-center text-slate-500 text-sm">Loading...</p> : messages.map(m => (
+              <div key={m.id} className={`flex ${m.sender_id === profile.id ? 'justify-end' : 'justify-start'}`}>
+                <div className={`p-3 rounded-2xl max-w-[80%] ${m.sender_id === profile.id ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm'}`}>
+                  <p className="text-sm">{m.message}</p>
+                  <p className="text-[10px] opacity-60 mt-1 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-[#0D1526] flex gap-2">
+            <input 
+              value={newMsg} 
+              onChange={e => setNewMsg(e.target.value)} 
+              placeholder={chatMode === "admin" ? "Message Admin..." : `Message @${targetUsername}...`} 
+              className="flex-1 bg-[#070D1A] text-white rounded-xl px-4 py-3 outline-none border border-white/10" 
+            />
+            <button className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-500"><Send size={20} /></button>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

