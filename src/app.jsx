@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Routes, Route, Navigate, Link, useNavigate, useSearchParams, Outlet } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -741,11 +741,10 @@ function HomePage() {
   const [isUsd, setIsUsd] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [wallet, setWallet] = useState({ available: 0, invested: 0, earnings: 0, total: 0 });
-  const [profile, setProfile] = useState({ name: "User", role: "Investor", referral_code: "", avatar_url: "", last_login_claim: null, vip_tier: "None" });
+  const [profile, setProfile] = useState({ name: "User", role: "Investor", referral_code: "", avatar_url: "", last_login_claim: null, vip_tier: "None", username: "" });
   const [investments, setInvestments] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
-  const [showSupport, setShowSupport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [, setTick] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
@@ -753,9 +752,26 @@ function HomePage() {
   const [showReferral, setShowReferral] = useState(false);
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
-  const [newMsg, setNewMsg] = useState("");
-  const [chatMessages, setChatMessages] = useState([]);
-  const [showInstall, setShowInstall] = useState(false);
+
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBtn, setShowInstallBtn] = useState(false);
+
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    });
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') setShowInstallBtn(false);
+      setDeferredPrompt(null);
+    }
+  };
 
   const isVip = profile.vip_tier && profile.vip_tier !== "None";
 
@@ -858,6 +874,17 @@ function HomePage() {
     <div className={`min-h-screen pb-28 text-white relative transition-colors duration-500 ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
+      {/* PWA Install Popup */}
+      {showInstallBtn && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm rounded-xl bg-blue-600 p-4 shadow-2xl flex items-center justify-between">
+          <div>
+            <p className="font-bold text-white text-sm">Install PrimeVest</p>
+            <p className="text-xs text-blue-200">Add to home screen for faster access</p>
+          </div>
+          <button onClick={handleInstallClick} className="bg-white text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold">Install</button>
+        </div>
+      )}
+
       <button onClick={() => navigate("/chat")} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl shadow-blue-900/50 hover:bg-blue-500 transition">
         <MessageSquare className="h-6 w-6" />
       </button>
@@ -902,6 +929,7 @@ function HomePage() {
           <div>
             <p className="text-sm text-slate-400">Welcome back,</p>
             <h2 className="mt-1 text-2xl font-bold sm:text-3xl">{profile.name}</h2>
+            <p className="text-sm text-slate-500">@{profile.username}</p>
           </div>
           {canClaimDaily ? (
             <button onClick={handleClaimDaily} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold shadow-lg shadow-emerald-900/40 hover:bg-emerald-500">
