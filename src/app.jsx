@@ -103,20 +103,28 @@ export const api = {
   },
   setUsername: async (username) => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("profiles").update({ username }).eq("id", user.id);
+    // Strip @ if typed
+    const cleanUsername = username.replace("@", "").toLowerCase();
+    const { error } = await supabase.from("profiles").update({ username: cleanUsername }).eq("id", user.id);
     if (error) return { error: "Username already taken." };
     return { success: true };
   },
   addFriend: async (username) => {
     // Strip the @ symbol if the user typed it
-    const cleanUsername = username.replace("@", "");
+    const cleanUsername = username.replace("@", "").toLowerCase();
     const { data: { user } } = await supabase.auth.getUser();
+    
+    // Find the target user
     const { data: target } = await supabase.from("profiles").select("id").eq("username", cleanUsername).single();
     if (!target) return { error: "User not found. Make sure they have set a username." };
     if (target.id === user.id) return { error: "You can't add yourself." };
     
+    // Check if already friends
+    const { data: existing } = await supabase.from("friendships").select("*").or(`and(user_id.eq.${user.id},friend_id.eq.${target.id}),and(user_id.eq.${target.id},friend_id.eq.${user.id})`).single();
+    if (existing) return { error: "You are already friends or have a pending request." };
+
     const { error } = await supabase.from("friendships").insert({ user_id: user.id, friend_id: target.id, status: 'pending' });
-    if (error) return { error: "Request already sent or you are already friends." };
+    if (error) return { error: "Failed to send request." };
     return { success: true };
   },
   getFriendRequests: async () => {
@@ -148,10 +156,13 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     const actualTarget = target === "admin" ? "00000000-0000-0000-0000-000000000000" : target;
     
-    return supabase.from("private_messages")
+    const { data, error } = await supabase.from("private_messages")
       .select("*")
       .or(`and(sender_id.eq.${user.id},receiver_id.eq.${actualTarget}),and(sender_id.eq.${actualTarget},receiver_id.eq.${user.id})`)
       .order("created_at", { ascending: true });
+      
+    if (error) console.error("Chat error:", error);
+    return { data };
   },
   
   notifications: async () => {
@@ -1031,11 +1042,11 @@ function AdminDashboard() {
   const [withdrawals, setWithdrawals] = useState([]);
   const [users, setUsers] = useState([]);
   const [vault, setVault] = useState([]);
-  const [messages, setMessages] = useState([]); // NEW
+  const [messages, setMessages] = useState([]); 
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(null);
-  const [activeTab, setActiveTab] = useState("withdrawals"); // withdrawals | users | vault | messages
+  const [activeTab, setActiveTab] = useState("withdrawals"); 
   const [replyMsg, setReplyMsg] = useState("");
 
   const handleLogin = (e) => {
