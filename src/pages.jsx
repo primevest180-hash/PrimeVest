@@ -4,7 +4,8 @@ import {
   ArrowLeft, CreditCard, Bitcoin, Building2, Wallet, Check, Copy, LockKeyhole,
   ChevronDown, Search, Loader2, CheckCircle2, Headphones, Mail, Crown, ArrowRight,
   TrendingUp, Timer, Rocket, Zap, HelpCircle, LogOut, User, Gamepad2, Home as HomeIcon,
-  Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon, Clock, Gift, Download, MessageSquare, UserPlus, Send
+  Settings as SettingsIcon, ArrowUpFromLine, ShieldCheck, Lock as LockIcon, Clock,
+  Gift, Download, MessageSquare, UserPlus, Send, Clock3
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -994,7 +995,7 @@ export function History() {
   );
 }
 
-/* =========================== SETTINGS =========================== */
+/* =========================== SETTINGS & CHAT =========================== */
 
 export function Settings() {
   const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "", username: "" });
@@ -1078,7 +1079,6 @@ export function Settings() {
       </header>
       <main className="mx-auto max-w-3xl px-4 py-8 space-y-4">
         
-        {/* PWA Install Button */}
         <button onClick={() => setShowInstall(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-bold text-white shadow-lg">
           <Download size={20} /> Install PrimeVest App
         </button>
@@ -1125,7 +1125,6 @@ export function Settings() {
           </div>
         )}
 
-        {/* Friends Section */}
         <div className="rounded-2xl border border-blue-400/10 bg-slate-900 p-5 space-y-4">
           <h3 className="font-bold text-lg flex items-center gap-2"><UserPlus size={18} /> Friends</h3>
           <div className="flex gap-2">
@@ -1161,7 +1160,6 @@ export function Settings() {
         <button onClick={async () => { await api.logout(); window.location.href = "/"; }} className="flex w-full items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-red-400"><LogOut className="h-5 w-5" /> Log Out</button>
       </main>
 
-      {/* PWA Install Popup */}
       {showInstall && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-[#0D1526] p-6 text-center border border-blue-500/30">
@@ -1175,8 +1173,6 @@ export function Settings() {
     </div>
   );
 }
-
-/* =========================== HELP & CHAT =========================== */
 
 export function Help() {
   return (
@@ -1218,7 +1214,6 @@ export function Chat() {
 
   useEffect(() => {
     api.profile().then(({ data }) => setProfile(data));
-    // Initial load of messages for selected target
     loadMessages();
   }, [targetId]);
 
