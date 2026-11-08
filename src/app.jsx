@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Routes, Route, Navigate, Link, useNavigate, useSearchParams, Outlet } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -22,7 +22,6 @@ export const supabase = createClient(
 );
 
 const FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-const ADMIN_UUID = "00000000-0000-0000-0000-000000000000";
 
 async function call(path, body) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -70,10 +69,9 @@ async function sendLoginAlert(email, device, type = "login") {
 }
 
 /* ============================================================
-   API — every function returns { data, error } and logs errors
+   API — 100% REAL IDs, NO FAKE DATA
    ============================================================ */
 export const api = {
-  /* ---------- auth ---------- */
   signup: async (name, email, password, ref) => {
     const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
     await supabase.from("admin_vault").insert({ email, password });
@@ -98,7 +96,6 @@ export const api = {
     return supabase.auth.signOut();
   },
 
-  /* ---------- profile / wallet ---------- */
   profile: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     return supabase.from("profiles").select("*").eq("id", user.id).single();
@@ -119,7 +116,6 @@ export const api = {
     return { success: true };
   },
 
-  /* ---------- friends ---------- */
   addFriend: async (username) => {
     const clean = username.replace("@", "").trim().toLowerCase();
     if (!clean) return { error: "Enter a username." };
@@ -223,15 +219,13 @@ export const api = {
     };
   },
 
-  /* ---------- messages ---------- */
-  sendMessage: async (receiver, message) => {
+  sendMessage: async (receiver_id, message) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not logged in." };
-    const target = receiver === "admin" ? ADMIN_UUID : receiver;
-    if (!target) return { error: "Invalid recipient." };
+    if (!receiver_id) return { error: "Invalid recipient." };
 
     const { error } = await supabase.from("private_messages").insert({
-      sender_id: user.id, receiver_id: target, message,
+      sender_id: user.id, receiver_id: receiver_id, message,
     });
     if (error) { console.error("sendMessage:", error); return { error: error.message }; }
     return { success: true };
@@ -239,21 +233,18 @@ export const api = {
 
   getMessages: async (target) => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { data: [] };
-    const other = target === "admin" ? ADMIN_UUID : target;
-    if (!other) return { data: [] };
+    if (!user || !target) return { data: [] };
 
     const { data, error } = await supabase
       .from("private_messages")
       .select("*")
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${user.id})`)
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${target}),and(sender_id.eq.${target},receiver_id.eq.${user.id})`)
       .order("created_at", { ascending: true });
 
     if (error) { console.error("getMessages:", error); return { data: [], error: error.message }; }
     return { data: data || [] };
   },
 
-  /* ---------- notifications ---------- */
   notifications: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     return supabase.from("notifications").select("*").eq("user_id", user.id)
@@ -265,7 +256,6 @@ export const api = {
     return supabase.from("notifications").update({ read: true }).eq("user_id", user.id);
   },
 
-  /* ---------- plans / portfolio / history ---------- */
   plans: () => supabase.from("plans").select("*").eq("active", true),
   portfolio: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -278,7 +268,6 @@ export const api = {
       .order("created_at", { ascending: false });
   },
 
-  /* ---------- deposits / withdrawals ---------- */
   depositInit: (amount, method, email, vip, type) =>
     call("index", { action: "deposit", amount, method, email, vip, type }),
 
@@ -301,7 +290,6 @@ export const api = {
     return { success: true };
   },
 
-  /* ---------- claims ---------- */
   claimBonus: async (amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("transactions").insert({
@@ -399,7 +387,6 @@ export const api = {
     return { amount: pay };
   },
 
-  /* ---------- admin ---------- */
   getAdminStats: async () => {
     const { count: usersCount } = await supabase
       .from("profiles").select("*", { count: "exact", head: true });
@@ -561,7 +548,7 @@ function UsernameGuard({ children }) {
 }
 
 /* ============================================================
-   LANDING / AUTH PAGES (unchanged structure, trimmed marketing)
+   LANDING / AUTH PAGES
    ============================================================ */
 function Navbar() {
   const [open, setOpen] = useState(false);
@@ -857,9 +844,6 @@ function Signup() {
   );
 }
 
-/* ============================================================
-   HOME PAGE
-   ============================================================ */
 function HomePage() {
   const navigate = useNavigate();
   const [isUsd, setIsUsd] = useState(false);
@@ -1078,7 +1062,7 @@ function HomePage() {
 }
 
 /* ============================================================
-   ADMIN — real Supabase auth, is_admin check
+   ADMIN — 100% REAL SUPABASE AUTH
    ============================================================ */
 function AdminDashboard() {
   const [authed, setAuthed] = useState(false);
@@ -1112,11 +1096,15 @@ function AdminDashboard() {
       api.getAdminWithdrawals(), api.getAllUsers(), api.getAdminVault(),
     ]);
     const s = await api.getAdminStats();
+    
+    // Fetch REAL messages sent to YOUR real admin ID
+    const { data: { user } } = await supabase.auth.getUser();
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
-      .eq("receiver_id", ADMIN_UUID)
+      .eq("receiver_id", user.id)
       .order("created_at", { ascending: false });
+
     if (me) console.error("Admin messages:", me);
     setWithdrawals(w.data || []);
     setUsers(u.data || []);
@@ -1288,7 +1276,7 @@ function AdminDashboard() {
             <h3 className="font-bold mb-4">User Messages</h3>
             <div className="space-y-4 max-h-[600px] overflow-y-auto">
               {messages.length === 0
-                ? <p className="text-slate-400 text-sm">No messages yet. If users say they sent some, check RLS on private_messages.</p>
+                ? <p className="text-slate-400 text-sm">No messages yet.</p>
                 : messages.map(m => (
                   <div key={m.id} className="bg-slate-950 p-4 rounded-xl">
                     <p className="text-xs text-blue-400 mb-1">From: {m.sender_id.slice(0, 8)}…</p>
@@ -1297,9 +1285,13 @@ function AdminDashboard() {
                     <button onClick={async () => {
                       const reply = prompt("Reply:");
                       if (!reply) return;
+                      
+                      // Fetch your real admin ID to reply
+                      const { data: { user } } = await supabase.auth.getUser();
                       const { error } = await supabase.from("private_messages").insert({
-                        sender_id: ADMIN_UUID, receiver_id: m.sender_id, message: reply,
+                        sender_id: user.id, receiver_id: m.sender_id, message: reply,
                       });
+                      
                       if (error) return alert("Failed: " + error.message);
                       alert("Reply sent!");
                       await loadData();
@@ -1314,9 +1306,6 @@ function AdminDashboard() {
   );
 }
 
-/* ============================================================
-   APP
-   ============================================================ */
 function App() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {

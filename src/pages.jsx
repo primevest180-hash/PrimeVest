@@ -8,8 +8,6 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
-const ADMIN_UUID = "00000000-0000-0000-0000-000000000000";
-
 export const Toast = ({ message, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
   return (
@@ -866,7 +864,7 @@ export function History() {
   );
 }
 
-/* =========================== SETTINGS (friend requests) =========================== */
+/* =========================== SETTINGS =========================== */
 export function Settings() {
   const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "", username: "" });
   const [uploading, setUploading] = useState(false);
@@ -1114,7 +1112,7 @@ export function Help() {
   );
 }
 
-/* =========================== CHAT (WhatsApp-style) =========================== */
+/* =========================== CHAT (100% Real IDs) =========================== */
 export function Chat() {
   const params = new URLSearchParams(window.location.search);
   const paramId = params.get("id");
@@ -1146,7 +1144,26 @@ export function Chat() {
   const load = async (target) => {
     if (!target) return;
     setLoading(true);
-    const { data, error } = await api.getMessages(target);
+    
+    let actualTargetId = target;
+    
+    // If target is "admin", look up the real ID of the admin user
+    if (target === "admin") {
+      const { data: adminProfile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("is_admin", true)
+        .limit(1)
+        .single();
+        
+      if (adminProfile) {
+        actualTargetId = adminProfile.id;
+      } else {
+        console.error("No admin found in database");
+      }
+    }
+
+    const { data, error } = await api.getMessages(actualTargetId);
     if (error) console.error("Load messages:", error);
     setMessages(data || []);
     setLoading(false);
@@ -1158,11 +1175,26 @@ export function Chat() {
     e.preventDefault();
     if (!newMsg.trim()) return;
     setSending(true);
-    const r = await api.sendMessage(targetId, newMsg.trim());
+    
+    let actualTargetId = targetId;
+    
+    // Look up the admin's real ID if sending to Admin
+    if (targetId === "admin") {
+      const { data: adminProfile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("is_admin", true)
+        .limit(1)
+        .single();
+        
+      if (adminProfile) actualTargetId = adminProfile.id;
+    }
+
+    const r = await api.sendMessage(actualTargetId, newMsg.trim());
     setSending(false);
     if (r?.error) return alert("Send failed: " + r.error);
     setNewMsg("");
-    await load(targetId);
+    await load(targetId); 
   }
 
   return (
