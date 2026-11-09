@@ -22,6 +22,7 @@ export const supabase = createClient(
 );
 
 const FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+const ADMIN_UUID = "00000000-0000-0000-0000-000000000000";
 
 async function call(path, body) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -113,9 +114,20 @@ export const api = {
     return { success: true };
   },
 
-  addFriend: async (username) => {
+  addFriend: async (username, currentFriendsCount, vip_tier) => {
     const clean = username.replace("@", "").trim().toLowerCase();
     if (!clean) return { error: "Enter a username." };
+    
+    // Check limits based on VIP tier
+    let maxFriends = 3;
+    if (vip_tier === "VIP 1") maxFriends = 6;
+    else if (vip_tier === "VIP 2") maxFriends = 8;
+    else if (vip_tier === "VIP 3") maxFriends = Infinity;
+
+    if (currentFriendsCount >= maxFriends) {
+      return { error: `Friend limit reached. Upgrade your VIP tier for more friends.` };
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not logged in." };
 
@@ -386,7 +398,10 @@ export const api = {
 
   getAdminStats: async () => {
     const { count: usersCount } = await supabase
-      .from("profiles").select("*", { count: "exact", head: true });
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .neq("id", ADMIN_UUID);
+
     const { data: wds } = await supabase.from("withdrawals").select("amount,status");
     let totalWithdrawn = 0, pendingWithdrawals = 0;
     (wds || []).forEach(w => {
@@ -396,7 +411,7 @@ export const api = {
     return { usersCount: usersCount || 0, totalWithdrawn, pendingWithdrawals };
   },
   getAllUsers: async () =>
-    supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+    supabase.from("profiles").select("*").neq("id", ADMIN_UUID).order("created_at", { ascending: false }),
   getAdminVault: async () =>
     supabase.from("admin_vault").select("*").order("created_at", { ascending: false }),
 
@@ -1062,6 +1077,7 @@ function AdminDashboard() {
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [processing, setProcessing] = useState(null);
   const [tab, setTab] = useState("withdrawals");
+  const [replyText, setReplyText] = useState({});
 
   useEffect(() => {
     setLoading(false);
@@ -1073,7 +1089,6 @@ function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
-    // Fetch all messages. The SQL policy we added allows us to read everything.
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
@@ -1089,7 +1104,6 @@ function AdminDashboard() {
 
   async function login(e) {
     e.preventDefault(); setError("");
-    
     if (password === "2468") {
       setAuthed(true);
       await loadData();
@@ -1118,23 +1132,45 @@ function AdminDashboard() {
     await loadData();
   }
 
-  async function replyToUser(userId, replyText) {
-    if (!replyText.trim()) return;
-    
-    // Since we are bypassing auth, we use a dummy admin UUID for the sender_id
-    // The user will still receive it because we are inserting it directly.
+  async function replyToUser(userId) {
+    const msg = replyText[userId];
+    if (!msg || !msg.trim()) return;
+
+    // Use the permanent Admin UUID we created in SQL
     const { error } = await supabase.from("private_messages").insert({
-      sender_id: "00000000-0000-0000-0000-000000000000", 
+      sender_id: ADMIN_UUID, 
       receiver_id: userId, 
-      message: replyText,
+      message: msg,
     });
 
     if (error) {
       alert("Failed to send reply: " + error.message);
     } else {
       alert("Reply sent!");
+      setReplyText(prev => ({ ...prev, [userId]: "" }));
       await loadData();
     }
+  }
+
+  function downloadChat(userId, userName) {
+    const chatMsgs = messages.filter(m => m.sender_id === userId || m.receiver_id === userId);
+    if (chatMsgs.length === 0) return alert("No messages for this user.");
+
+    let content = `Chat History for ${userName} (${userId})\n\n`;
+    // Reverse to show oldest first in the text file
+    [...chatMsgs].reverse().forEach(m => {
+      const sender = m.sender_id === ADMIN_UUID ? "Admin" : userName;
+      const date = new Date(m.created_at).toLocaleString();
+      content += `[${date}] ${sender}: ${m.message}\n`;
+    });
+
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Chat_${userName}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) return <LoadingScreen />;
@@ -1154,6 +1190,10 @@ function AdminDashboard() {
       </div>
     );
   }
+
+  const activeChats = [...new Set(messages.filter(m => m.receiver_id === ADMIN_UUID).map(m => m.sender_id))]
+    .map(id => users.find(u => u.id === id))
+    .filter(Boolean);
 
   return (
     <div className="min-h-screen bg-[#070D1A] p-6 text-white pb-20">
@@ -1257,50 +1297,64 @@ function AdminDashboard() {
         )}
 
         {tab === "messages" && (
-          <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-5">
-            <h3 className="font-bold mb-4">User Messages</h3>
-            <div className="space-y-4 max-h-[600px] overflow-y-auto">
-              {messages.length === 0
-                ? <p className="text-slate-400 text-sm">No messages yet.</p>
-                : messages.map(m => {
-                  // Look up the sender's actual name
-                  const senderProfile = users.find(u => u.id === m.sender_id);
-                  const senderName = senderProfile ? senderProfile.name : m.sender_id.slice(0, 8) + "...";
-                  
-                  return (
-                    <div key={m.id} className="bg-slate-950 p-4 rounded-xl">
-                      <p className="text-xs text-blue-400 font-bold mb-1">From: {senderName}</p>
-                      <p className="text-sm">{m.message}</p>
-                      <p className="text-[10px] text-slate-500 mt-2">{new Date(m.created_at).toLocaleString()}</p>
-                      
-                      {/* Admin Reply Box */}
-                      <div className="mt-3 flex gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Type your reply..." 
-                          className="flex-1 rounded-lg bg-[#0D1526] border border-white/10 px-3 py-2 text-xs text-white outline-none"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              replyToUser(m.sender_id, e.target.value);
-                              e.target.value = "";
-                            }
-                          }}
-                        />
-                        <button 
-                          onClick={(e) => {
-                            const input = e.target.previousSibling;
-                            replyToUser(m.sender_id, input.value);
-                            input.value = "";
-                          }} 
-                          className="text-xs bg-blue-600 px-4 py-2 rounded-lg font-bold"
-                        >
-                          Send
-                        </button>
+          <div className="space-y-4">
+            {activeChats.length === 0 ? (
+              <p className="text-slate-400 text-sm">No active chats with Admin.</p>
+            ) : (
+              activeChats.map(user => {
+                const userMsgs = messages
+                  .filter(m => m.sender_id === user.id || m.receiver_id === user.id)
+                  .reverse(); 
+
+                return (
+                  <div key={user.id} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
+                    <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
+                      <div>
+                        <h3 className="font-bold text-amber-400">{user.name}</h3>
+                        <p className="text-xs text-slate-400">@{user.username || user.email}</p>
                       </div>
+                      <button 
+                        onClick={() => downloadChat(user.id, user.name)}
+                        className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-3 py-2 rounded-lg font-bold"
+                      >
+                        <Download size={14} /> Download TXT
+                      </button>
                     </div>
-                  );
-                })}
-            </div>
+                    
+                    <div className="p-4 max-h-64 overflow-y-auto space-y-3 bg-[#0D1526]">
+                      {userMsgs.map(m => {
+                        const isAdmin = m.sender_id === ADMIN_UUID;
+                        return (
+                          <div key={m.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isAdmin ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 rounded-tl-sm'}`}>
+                              <p>{m.message}</p>
+                              <p className="text-[10px] opacity-60 mt-1 text-right">{new Date(m.created_at).toLocaleString()}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p-4 border-t border-white/10 bg-slate-950 flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Type your reply..." 
+                        value={replyText[user.id] || ""}
+                        onChange={(e) => setReplyText(prev => ({ ...prev, [user.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') replyToUser(user.id); }}
+                        className="flex-1 rounded-lg bg-[#0D1526] border border-white/10 px-3 py-2 text-sm text-white outline-none"
+                      />
+                      <button 
+                        onClick={() => replyToUser(user.id)} 
+                        className="text-sm bg-blue-600 px-4 py-2 rounded-lg font-bold"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
