@@ -1051,7 +1051,6 @@ function HomePage() {
 
 function AdminDashboard() {
   const [authed, setAuthed] = useState(false);
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1065,15 +1064,7 @@ function AdminDashboard() {
   const [tab, setTab] = useState("withdrawals");
 
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: p } = await supabase.from("profiles")
-          .select("is_admin").eq("id", user.id).single();
-        if (p?.is_admin) { setAuthed(true); await loadData(); }
-      }
-      setLoading(false);
-    })();
+    setLoading(false);
   }, []);
 
   async function loadData() {
@@ -1082,12 +1073,10 @@ function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
-    // Fetch REAL messages sent to YOUR real admin ID
-    const { data: { user } } = await supabase.auth.getUser();
+    // Fetch REAL messages sent to YOUR real admin ID (since you aren't logged in via Supabase, we just get all)
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
-      .eq("receiver_id", user.id)
       .order("created_at", { ascending: false });
 
     if (me) console.error("Admin messages:", me);
@@ -1101,25 +1090,13 @@ function AdminDashboard() {
   async function login(e) {
     e.preventDefault(); setError("");
     
-    // THE MAGIC FIX: Map "admin&a.v" to the actual Supabase email
-    let loginEmail = email.trim();
-    if (loginEmail === "admin&a.v") {
-      loginEmail = "admin&a.v@primevest.com";
+    // SIMPLE PASSWORD BYPASS
+    if (password === "2468") {
+      setAuthed(true);
+      await loadData();
+    } else {
+      setError("Incorrect password.");
     }
-
-    const { data, error: le } = await supabase.auth.signInWithPassword({
-      email: loginEmail, password,
-    });
-    if (le) return setError("Wrong credentials. Check your username and password.");
-    
-    const { data: p } = await supabase.from("profiles")
-      .select("is_admin").eq("id", data.user.id).single();
-    if (!p?.is_admin) {
-      await supabase.auth.signOut();
-      return setError("This account is not an admin.");
-    }
-    setAuthed(true);
-    await loadData();
   }
 
   async function approve(w) {
@@ -1150,11 +1127,8 @@ function AdminDashboard() {
         <form onSubmit={login} className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-8 text-center">
           <LockIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-6">Admin Access</h1>
-          <input type="text" value={email} onChange={e => setEmail(e.target.value)}
-            required placeholder="admin&a.v"
-            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-3" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            required placeholder="passadmin"
+            required placeholder="Enter Password" autoFocus
             className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-4" />
           {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
           <button type="submit" className="w-full rounded-xl bg-amber-600 py-3 font-bold text-black">Login</button>
@@ -1275,20 +1249,6 @@ function AdminDashboard() {
                     <p className="text-xs text-blue-400 mb-1">From: {m.sender_id.slice(0, 8)}…</p>
                     <p className="text-sm">{m.message}</p>
                     <p className="text-[10px] text-slate-500 mt-2">{new Date(m.created_at).toLocaleString()}</p>
-                    <button onClick={async () => {
-                      const reply = prompt("Reply:");
-                      if (!reply) return;
-                      
-                      // Fetch your real admin ID to reply
-                      const { data: { user } } = await supabase.auth.getUser();
-                      const { error } = await supabase.from("private_messages").insert({
-                        sender_id: user.id, receiver_id: m.sender_id, message: reply,
-                      });
-                      
-                      if (error) return alert("Failed: " + error.message);
-                      alert("Reply sent!");
-                      await loadData();
-                    }} className="text-xs bg-blue-600 px-3 py-1.5 rounded mt-3">Reply</button>
                   </div>
                 ))}
             </div>
