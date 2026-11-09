@@ -1073,7 +1073,7 @@ function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
-    // Fetch REAL messages sent to YOUR real admin ID (since you aren't logged in via Supabase, we just get all)
+    // Fetch all messages. The SQL policy we added allows us to read everything.
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
@@ -1090,7 +1090,6 @@ function AdminDashboard() {
   async function login(e) {
     e.preventDefault(); setError("");
     
-    // SIMPLE PASSWORD BYPASS
     if (password === "2468") {
       setAuthed(true);
       await loadData();
@@ -1117,6 +1116,25 @@ function AdminDashboard() {
     if (!confirm(`Toggle freeze for ${u.name}?`)) return;
     await api.toggleUserFreeze(u.id, u.account_status);
     await loadData();
+  }
+
+  async function replyToUser(userId, replyText) {
+    if (!replyText.trim()) return;
+    
+    // Since we are bypassing auth, we use a dummy admin UUID for the sender_id
+    // The user will still receive it because we are inserting it directly.
+    const { error } = await supabase.from("private_messages").insert({
+      sender_id: "00000000-0000-0000-0000-000000000000", 
+      receiver_id: userId, 
+      message: replyText,
+    });
+
+    if (error) {
+      alert("Failed to send reply: " + error.message);
+    } else {
+      alert("Reply sent!");
+      await loadData();
+    }
   }
 
   if (loading) return <LoadingScreen />;
@@ -1244,13 +1262,44 @@ function AdminDashboard() {
             <div className="space-y-4 max-h-[600px] overflow-y-auto">
               {messages.length === 0
                 ? <p className="text-slate-400 text-sm">No messages yet.</p>
-                : messages.map(m => (
-                  <div key={m.id} className="bg-slate-950 p-4 rounded-xl">
-                    <p className="text-xs text-blue-400 mb-1">From: {m.sender_id.slice(0, 8)}…</p>
-                    <p className="text-sm">{m.message}</p>
-                    <p className="text-[10px] text-slate-500 mt-2">{new Date(m.created_at).toLocaleString()}</p>
-                  </div>
-                ))}
+                : messages.map(m => {
+                  // Look up the sender's actual name
+                  const senderProfile = users.find(u => u.id === m.sender_id);
+                  const senderName = senderProfile ? senderProfile.name : m.sender_id.slice(0, 8) + "...";
+                  
+                  return (
+                    <div key={m.id} className="bg-slate-950 p-4 rounded-xl">
+                      <p className="text-xs text-blue-400 font-bold mb-1">From: {senderName}</p>
+                      <p className="text-sm">{m.message}</p>
+                      <p className="text-[10px] text-slate-500 mt-2">{new Date(m.created_at).toLocaleString()}</p>
+                      
+                      {/* Admin Reply Box */}
+                      <div className="mt-3 flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Type your reply..." 
+                          className="flex-1 rounded-lg bg-[#0D1526] border border-white/10 px-3 py-2 text-xs text-white outline-none"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              replyToUser(m.sender_id, e.target.value);
+                              e.target.value = "";
+                            }
+                          }}
+                        />
+                        <button 
+                          onClick={(e) => {
+                            const input = e.target.previousSibling;
+                            replyToUser(m.sender_id, input.value);
+                            input.value = "";
+                          }} 
+                          className="text-xs bg-blue-600 px-4 py-2 rounded-lg font-bold"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
