@@ -68,9 +68,6 @@ async function sendLoginAlert(email, device, type = "login") {
   } catch (err) { console.error("Login alert failed", err); }
 }
 
-/* ============================================================
-   API — 100% REAL IDs, NO FAKE DATA
-   ============================================================ */
 export const api = {
   signup: async (name, email, password, ref) => {
     const finalName = name || email.split("@")[0].replace(/[^a-zA-Z]/g, " ");
@@ -444,9 +441,6 @@ export const api = {
   },
 };
 
-/* ============================================================
-   SHARED UI
-   ============================================================ */
 function LoadingScreen() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070D1A]">
@@ -471,9 +465,6 @@ const Toast = ({ message, onClose }) => {
   );
 };
 
-/* ============================================================
-   ROUTE GUARDS
-   ============================================================ */
 function ProtectedRoute() {
   const [loading, setLoading] = useState(true);
   const [authed, setAuthed] = useState(false);
@@ -547,9 +538,6 @@ function UsernameGuard({ children }) {
   return children;
 }
 
-/* ============================================================
-   LANDING / AUTH PAGES
-   ============================================================ */
 function Navbar() {
   const [open, setOpen] = useState(false);
   return (
@@ -1061,9 +1049,6 @@ function HomePage() {
   );
 }
 
-/* ============================================================
-   ADMIN — 100% REAL SUPABASE AUTH
-   ============================================================ */
 function AdminDashboard() {
   const [authed, setAuthed] = useState(false);
   const [email, setEmail] = useState("");
@@ -1115,10 +1100,15 @@ function AdminDashboard() {
 
   async function login(e) {
     e.preventDefault(); setError("");
+    
+    // MAGIC FIX: If they type 'admin', convert it to the real email
+    const loginEmail = email.trim().toLowerCase() === "admin" ? "admin@primevest.com" : email.trim();
+
     const { data, error: le } = await supabase.auth.signInWithPassword({
-      email: email.trim(), password,
+      email: loginEmail, password,
     });
     if (le) return setError(le.message);
+    
     const { data: p } = await supabase.from("profiles")
       .select("is_admin").eq("id", data.user.id).single();
     if (!p?.is_admin) {
@@ -1157,11 +1147,11 @@ function AdminDashboard() {
         <form onSubmit={login} className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-8 text-center">
           <LockIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-6">Admin Access</h1>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-            required placeholder="Admin email"
+          <input type="text" value={email} onChange={e => setEmail(e.target.value)}
+            required placeholder="admin"
             className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-3" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            required placeholder="Password"
+            required placeholder="adminpass"
             className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-4" />
           {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
           <button type="submit" className="w-full rounded-xl bg-amber-600 py-3 font-bold text-black">Login</button>

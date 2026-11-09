@@ -4,7 +4,7 @@ import {
   ArrowLeft, CreditCard, Bitcoin, Wallet, Check, Copy, LockKeyhole,
   Loader2, CheckCircle2, Crown, ArrowRight, TrendingUp, Timer, Rocket, Zap,
   HelpCircle, LogOut, User, Gamepad2, ArrowUpFromLine, Clock, Gift,
-  MessageSquare, UserPlus, Send, Clock3,
+  MessageSquare, UserPlus, Send, Clock3, Menu, ShieldCheck
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -1112,7 +1112,7 @@ export function Help() {
   );
 }
 
-/* =========================== CHAT (100% Real IDs) =========================== */
+/* =========================== CHAT (Mobile Responsive) =========================== */
 export function Chat() {
   const params = new URLSearchParams(window.location.search);
   const paramId = params.get("id");
@@ -1128,6 +1128,8 @@ export function Chat() {
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  
+  const [showSidebar, setShowSidebar] = useState(false);
 
   useEffect(() => {
     api.profile().then(({ data }) => data && setProfile(data));
@@ -1147,7 +1149,6 @@ export function Chat() {
     
     let actualTargetId = target;
     
-    // If target is "admin", look up the real ID of the admin user
     if (target === "admin") {
       const { data: adminProfile } = await supabase
         .from("profiles")
@@ -1178,7 +1179,6 @@ export function Chat() {
     
     let actualTargetId = targetId;
     
-    // Look up the admin's real ID if sending to Admin
     if (targetId === "admin") {
       const { data: adminProfile } = await supabase
         .from("profiles")
@@ -1197,24 +1197,38 @@ export function Chat() {
     await load(targetId); 
   }
 
+  const selectChat = (mode, id, name) => {
+    setChatMode(mode);
+    setTargetId(id);
+    setTargetName(name);
+    setShowSidebar(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#0B1120] flex flex-col">
       <header className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0D1526]">
-        <a href="/home" className="flex items-center gap-2 text-white"><ArrowLeft size={20} /> Back</a>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowSidebar(!showSidebar)} className="text-white md:hidden">
+            <Menu size={24} />
+          </button>
+          <a href="/home" className="hidden md:flex items-center gap-2 text-white">
+            <ArrowLeft size={20} /> Back
+          </a>
+        </div>
         <div className="text-center">
           <h1 className="text-lg font-bold text-white">{targetName}</h1>
           <p className="text-xs text-slate-400">{chatMode === "admin" ? "Support" : "Friend"}</p>
         </div>
-        <div className="w-8" />
+        <div className="w-8 md:hidden" />
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/3 max-w-xs border-r border-white/10 bg-[#0D1526] flex flex-col">
+      <div className="flex-1 flex overflow-hidden relative">
+        <div className={`absolute md:relative z-20 w-64 h-full border-r border-white/10 bg-[#0D1526] flex flex-col transition-transform duration-300 ${showSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
           <button
-            onClick={() => { setChatMode("admin"); setTargetId("admin"); setTargetName("Admin Support"); }}
+            onClick={() => selectChat("admin", "admin", "Admin Support")}
             className={`p-4 flex items-center gap-3 ${chatMode === "admin" ? "bg-blue-600/20 border-l-4 border-blue-500" : "hover:bg-white/5"}`}>
             <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
-              <Send size={18} className="text-white" />
+              <ShieldCheck size={18} className="text-white" />
             </div>
             <div className="text-left text-white">
               <p className="font-bold text-sm">Admin</p>
@@ -1228,7 +1242,7 @@ export function Chat() {
               ? <p className="text-xs text-slate-500">No friends yet. Add in Settings.</p>
               : friends.map(f => (
                   <button key={f.id}
-                    onClick={() => { setChatMode("friend"); setTargetId(f.friend_id); setTargetName(f.profiles?.name || "Friend"); }}
+                    onClick={() => selectChat("friend", f.friend_id, f.profiles?.name || "Friend")}
                     className={`w-full flex items-center gap-3 p-2 rounded-lg mb-1 ${targetId === f.friend_id ? "bg-slate-800" : "hover:bg-white/5"}`}>
                     <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
                       {(f.profiles?.name || "?")[0]}
@@ -1239,7 +1253,7 @@ export function Chat() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col bg-[#070D1A]">
+        <div className="flex-1 flex flex-col bg-[#070D1A] w-full">
           <div className="flex-1 p-4 overflow-y-auto space-y-3">
             {loading
               ? <p className="text-center text-slate-500 text-sm">Loading...</p>
@@ -1247,7 +1261,7 @@ export function Chat() {
                 ? <p className="text-center text-slate-500 text-sm mt-10">No messages yet. Say hi 👋</p>
                 : messages.map(m => (
                     <div key={m.id} className={`flex ${m.sender_id === profile.id ? "justify-end" : "justify-start"}`}>
-                      <div className={`p-3 rounded-2xl max-w-[80%] ${m.sender_id === profile.id ? "bg-blue-600 text-white rounded-tr-sm" : "bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm"}`}>
+                      <div className={`p-3 rounded-2xl max-w-[85%] md:max-w-[80%] ${m.sender_id === profile.id ? "bg-blue-600 text-white rounded-tr-sm" : "bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm"}`}>
                         <p className="text-sm break-words">{m.message}</p>
                         <p className="text-[10px] opacity-60 mt-1 text-right">
                           {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
