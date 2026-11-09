@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock as LockIcon, CheckCircle, Download, ArrowLeft, Users, Wallet, MessageSquare, LogOut } from "lucide-react";
+import { Lock as LockIcon, CheckCircle, Download, ArrowLeft, Users, Wallet, MessageSquare } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
 export function AdminDashboard() {
@@ -14,7 +14,7 @@ export function AdminDashboard() {
   const [messages, setMessages] = useState([]);
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [processing, setProcessing] = useState(null);
-  const [tab, setTab] = useState("dashboard"); // New sidebar tab
+  const [tab, setTab] = useState("dashboard");
   const [replyText, setReplyText] = useState({});
 
   useEffect(() => {
@@ -27,13 +27,14 @@ export function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
-    // Fetch ALL messages
+    // Fetch ALL messages without filtering by receiver_id
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
       .order("created_at", { ascending: false });
 
     if (me) console.error("Admin messages:", me);
+    
     setWithdrawals(w.data || []);
     setUsers(u.data || []);
     setVault(v.data || []);
@@ -113,7 +114,6 @@ export function AdminDashboard() {
 
   if (loading) return <div className="min-h-screen bg-[#070D1A] text-white flex items-center justify-center">Loading...</div>;
 
-  // LOGIN SCREEN
   if (!authed) {
     return (
       <div className="min-h-screen bg-[#070D1A] flex items-center justify-center p-4">
@@ -130,8 +130,12 @@ export function AdminDashboard() {
     );
   }
 
-  // Group messages by actual users for the chat tab
-  const activeChats = [...new Set(messages.filter(m => m.receiver_id === ADMIN_UUID).map(m => m.sender_id))]
+  // Find unique users who have sent OR received messages
+  const uniqueUserIds = [...new Set(messages.map(m => m.sender_id === ADMIN_UUID ? m.receiver_id : m.sender_id))]
+    .filter(id => id !== ADMIN_UUID); // Exclude Admin
+
+  // Map those IDs to actual user profiles
+  const activeChats = uniqueUserIds
     .map(id => users.find(u => u.id === id))
     .filter(Boolean);
 
@@ -167,9 +171,8 @@ export function AdminDashboard() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* MOBILE TOP BAR */}
         <div className="md:hidden p-4 bg-[#0D1526] border-b border-white/5 flex justify-between items-center">
            <h1 className="font-bold text-amber-500">Admin Panel</h1>
            <select onChange={(e) => setTab(e.target.value)} value={tab} className="bg-slate-900 text-white text-sm rounded-lg px-2 py-1 outline-none">
@@ -182,7 +185,6 @@ export function AdminDashboard() {
 
         <div className="flex-1 overflow-y-auto p-6 md:p-10">
           
-          {/* DASHBOARD TAB */}
           {tab === "dashboard" && (
             <div className="max-w-5xl mx-auto space-y-8">
               <h2 className="text-2xl font-bold">Overview</h2>
@@ -225,12 +227,11 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {/* USERS TAB */}
           {tab === "users" && (
             <div className="max-w-5xl mx-auto space-y-6">
               <h2 className="text-2xl font-bold">Manage Users</h2>
               <div className="space-y-4">
-                {users.length === 0 ? <p className="text-slate-400">No users found. Check SQL policies.</p> : users.map(u => (
+                {users.length === 0 ? <p className="text-slate-400">No users found.</p> : users.map(u => (
                   <div key={u.id} className="rounded-2xl border border-white/5 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div>
                       <p className="font-bold text-lg">{u.name}</p>
@@ -246,12 +247,11 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {/* MESSAGES TAB */}
           {tab === "messages" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <h2 className="text-2xl font-bold">User Inbox</h2>
               {activeChats.length === 0 ? (
-                <p className="text-slate-400">No messages yet.</p>
+                <p className="text-slate-400">No active chats found.</p>
               ) : (
                 activeChats.map(user => {
                   const userMsgs = messages.filter(m => m.sender_id === user.id || m.receiver_id === user.id).reverse();
@@ -259,11 +259,11 @@ export function AdminDashboard() {
                     <div key={user.id} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
                       <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
                         <div>
-                          <h3 className="font-bold text-lg">{user.name}</h3>
+                          <h3 className="font-bold text-lg text-amber-400">{user.name}</h3>
                           <p className="text-xs text-slate-400">{user.email}</p>
                         </div>
                         <button onClick={() => downloadChat(user.id, user.name)} className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold">
-                          <Download size={14} /> Download Chat
+                          <Download size={14} /> Download TXT
                         </button>
                       </div>
                       
@@ -298,7 +298,6 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {/* VAULT TAB */}
           {tab === "vault" && (
             <div className="max-w-5xl mx-auto space-y-6">
               <h2 className="text-2xl font-bold">Security Vault</h2>
@@ -309,7 +308,7 @@ export function AdminDashboard() {
                   </thead>
                   <tbody>
                     {vault.length === 0
-                      ? <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500">Vault empty. Run SQL to fix.</td></tr>
+                      ? <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-500">Vault empty.</td></tr>
                       : vault.map(v => (
                         <tr key={v.id} className="border-t border-white/5">
                           <td className="px-6 py-4">{v.email}</td>
