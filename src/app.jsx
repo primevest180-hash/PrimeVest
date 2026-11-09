@@ -22,7 +22,7 @@ export const supabase = createClient(
 );
 
 const FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-const ADMIN_UUID = "00000000-0000-0000-0000-000000000000";
+export const ADMIN_UUID = "00000000-0000-0000-0000-000000000000";
 
 async function call(path, body) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -114,20 +114,10 @@ export const api = {
     return { success: true };
   },
 
-  addFriend: async (username, currentFriendsCount, vip_tier) => {
+  addFriend: async (username) => {
     const clean = username.replace("@", "").trim().toLowerCase();
     if (!clean) return { error: "Enter a username." };
     
-    // Check limits based on VIP tier
-    let maxFriends = 3;
-    if (vip_tier === "VIP 1") maxFriends = 6;
-    else if (vip_tier === "VIP 2") maxFriends = 8;
-    else if (vip_tier === "VIP 3") maxFriends = Infinity;
-
-    if (currentFriendsCount >= maxFriends) {
-      return { error: `Friend limit reached. Upgrade your VIP tier for more friends.` };
-    }
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not logged in." };
 
@@ -1136,7 +1126,6 @@ function AdminDashboard() {
     const msg = replyText[userId];
     if (!msg || !msg.trim()) return;
 
-    // Use the permanent Admin UUID we created in SQL
     const { error } = await supabase.from("private_messages").insert({
       sender_id: ADMIN_UUID, 
       receiver_id: userId, 
@@ -1157,7 +1146,6 @@ function AdminDashboard() {
     if (chatMsgs.length === 0) return alert("No messages for this user.");
 
     let content = `Chat History for ${userName} (${userId})\n\n`;
-    // Reverse to show oldest first in the text file
     [...chatMsgs].reverse().forEach(m => {
       const sender = m.sender_id === ADMIN_UUID ? "Admin" : userName;
       const date = new Date(m.created_at).toLocaleString();
