@@ -1101,19 +1101,22 @@ function AdminDashboard() {
   async function login(e) {
     e.preventDefault(); setError("");
     
-    // MAGIC FIX: If they type 'admin', convert it to the real email
-    const loginEmail = email.trim().toLowerCase() === "admin" ? "admin@primevest.com" : email.trim();
+    // THE MAGIC FIX: Map "admin&a.v" to the actual Supabase email
+    let loginEmail = email.trim();
+    if (loginEmail === "admin&a.v") {
+      loginEmail = "admin&a.v@primevest.com";
+    }
 
     const { data, error: le } = await supabase.auth.signInWithPassword({
       email: loginEmail, password,
     });
-    if (le) return setError(le.message);
+    if (le) return setError("Wrong credentials. Check your username and password.");
     
     const { data: p } = await supabase.from("profiles")
       .select("is_admin").eq("id", data.user.id).single();
     if (!p?.is_admin) {
       await supabase.auth.signOut();
-      return setError("Not an admin account.");
+      return setError("This account is not an admin.");
     }
     setAuthed(true);
     await loadData();
@@ -1148,10 +1151,10 @@ function AdminDashboard() {
           <LockIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-6">Admin Access</h1>
           <input type="text" value={email} onChange={e => setEmail(e.target.value)}
-            required placeholder="admin"
+            required placeholder="admin&a.v"
             className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-3" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            required placeholder="adminpass"
+            required placeholder="passadmin"
             className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-4" />
           {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
           <button type="submit" className="w-full rounded-xl bg-amber-600 py-3 font-bold text-black">Login</button>
