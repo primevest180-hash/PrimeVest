@@ -22,7 +22,6 @@ export function Chat() {
   const [unreadCounts, setUnreadCounts] = useState({});
   const messagesEndRef = useRef(null);
 
-  // Scroll to bottom
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { scrollToBottom(); }, [messages]);
 
@@ -56,27 +55,22 @@ export function Chat() {
     setLoading(false);
   };
 
-  // REAL-TIME CHAT LISTENER
   useEffect(() => {
     if (!profile.id) return;
     
     load(targetId);
-
-    // Mark messages as read when opening
     setUnreadCounts(prev => ({ ...prev, [targetId]: 0 }));
 
     const channel = supabase.channel('realtime_messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
         const newMessage = payload.new;
         
-        // If message is for the currently open chat, append it
         if (
           (newMessage.sender_id === profile.id && newMessage.receiver_id === (targetId === "admin" ? ADMIN_UUID : targetId)) ||
           (newMessage.receiver_id === profile.id && newMessage.sender_id === (targetId === "admin" ? ADMIN_UUID : targetId))
         ) {
           setMessages(prev => [...prev, newMessage]);
         } else if (newMessage.receiver_id === profile.id) {
-          // Message is for another chat - increase unread badge
           const sender = newMessage.sender_id === ADMIN_UUID ? "admin" : newMessage.sender_id;
           setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
         }
@@ -97,7 +91,6 @@ export function Chat() {
     
     if (r?.error) return alert("Send failed: " + r.error);
     setNewMsg("");
-    // Note: The real-time listener above will automatically catch this and add it to the UI!
   }
 
   const selectChat = (mode, id, name) => {
@@ -105,7 +98,7 @@ export function Chat() {
     setTargetId(id);
     setTargetName(name);
     setShowSidebar(false);
-    setUnreadCounts(prev => ({ ...prev, [id]: 0 })); // clear badge
+    setUnreadCounts(prev => ({ ...prev, [id]: 0 }));
   };
 
   return (

@@ -13,9 +13,8 @@ import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
   Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, BonusGame, Invest,
-  Portfolio, Settings, Help, History, ScratchCard, MysteryBox,
+  Portfolio, Settings, Help, History, ScratchCard, MysteryBox, Login
 } from "./pages";
-
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
 
