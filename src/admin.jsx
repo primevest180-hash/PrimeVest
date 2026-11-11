@@ -27,7 +27,6 @@ export function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
-    // Fetch EVERY single message in the database
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
@@ -78,7 +77,6 @@ export function AdminDashboard() {
     const msg = replyText[userId];
     if (!msg || !msg.trim()) return;
 
-    // Send reply as the Admin UUID
     const { error } = await supabase.from("private_messages").insert({
       sender_id: ADMIN_UUID, 
       receiver_id: userId, 
@@ -95,7 +93,6 @@ export function AdminDashboard() {
   }
 
   function downloadChat(userId, userName) {
-    // Get every message involving this user
     const chatMsgs = messages.filter(m => m.sender_id === userId || m.receiver_id === userId);
     if (chatMsgs.length === 0) return alert("No messages for this user.");
 
@@ -132,14 +129,12 @@ export function AdminDashboard() {
     );
   }
 
-  // 1. Get a list of ALL unique user IDs that sent or received a message
-  const allMessageUserIds = [...new Set(messages.map(m => m.sender_id === ADMIN_UUID ? m.receiver_id : m.sender_id))]
-    .filter(id => id !== ADMIN_UUID); // Exclude the Admin's own ID
+  const uniqueUserIds = [...new Set(messages.map(m => m.sender_id === ADMIN_UUID ? m.receiver_id : m.sender_id))]
+    .filter(id => id !== ADMIN_UUID); 
 
-  // 2. Match those IDs to the actual user profiles
-  const activeChats = allMessageUserIds
+  const activeChats = uniqueUserIds
     .map(id => users.find(u => u.id === id))
-    .filter(Boolean); // Remove any nulls if a user was deleted
+    .filter(Boolean); 
 
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
@@ -256,7 +251,6 @@ export function AdminDashboard() {
                 <p className="text-slate-400">No active chats found.</p>
               ) : (
                 activeChats.map(user => {
-                  // Filter messages for this specific user
                   const userMsgs = messages.filter(m => m.sender_id === user.id || m.receiver_id === user.id).reverse();
                   return (
                     <div key={user.id} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">

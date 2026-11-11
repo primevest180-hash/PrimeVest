@@ -16,7 +16,6 @@ import {
   Portfolio, Settings, Help, History, ScratchCard, MysteryBox,
 } from "./pages";
 
-// IMPORT THE NEW SEPARATE FILES
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
 
@@ -103,6 +102,16 @@ export const api = {
     return supabase.from("profiles").select("*").eq("id", user.id).single();
   },
 
+  uploadAvatar: async (file, userId) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}-${Math.random()}.${fileExt}`;
+    const { error } = await supabase.storage.from('avatars').upload(fileName, file);
+    if (error) throw error;
+    const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
+    return data.publicUrl;
+  },
+
   wallet: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     return supabase.from("wallets").select("*").eq("user_id", user.id).single();
@@ -121,7 +130,6 @@ export const api = {
   addFriend: async (username) => {
     const clean = username.replace("@", "").trim().toLowerCase();
     if (!clean) return { error: "Enter a username." };
-    
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not logged in." };
 
@@ -679,76 +687,6 @@ function LandingPage() {
   );
 }
 
-function Login() {
-  const navigate = useNavigate();
-  const [show, setShow] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e) {
-    e.preventDefault(); setError(""); setLoading(true);
-    const { error } = await api.login(form.email.trim(), form.password);
-    setLoading(false);
-    if (error) return setError(error.message || "Incorrect email or password.");
-    navigate("/home");
-  }
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 lg:grid-cols-2">
-        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
-          <Link to="/" className="inline-flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
-              <ShieldCheck size={27} />
-            </div>
-            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
-          </Link>
-          <div className="mt-24">
-            <TrendingUp size={30} />
-            <h1 className="mt-3 text-4xl font-bold">Welcome back.</h1>
-          </div>
-        </section>
-        <section className="p-6 sm:p-10 lg:p-12">
-          <p className="text-sm text-blue-400">WELCOME BACK</p>
-          <h2 className="mt-2 text-3xl font-bold">Log in</h2>
-          <form onSubmit={submit} className="mt-6 space-y-5">
-            <div>
-              <label className="mb-2 block text-sm text-slate-300">Email</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
-                <Mail size={19} className="text-slate-500" />
-                <input type="email" required value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" />
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm text-slate-300">Password</label>
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
-                <Lock size={19} className="text-slate-500" />
-                <input type={show ? "text" : "password"} required value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your password" />
-                <button type="button" onClick={() => setShow(!show)}>
-                  {show ? <EyeOff size={19} /> : <Eye size={19} />}
-                </button>
-              </div>
-            </div>
-            {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-            <button disabled={loading}
-              className="w-full rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">
-              {loading ? "Logging in..." : "Log In"}
-            </button>
-          </form>
-          <p className="mt-8 text-center text-sm text-slate-400">
-            Don't have an account? <Link to="/signup" className="text-blue-400">Create one</Link>
-          </p>
-        </section>
-      </div>
-    </main>
-  );
-}
-
 function Signup() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -1058,7 +996,6 @@ function HomePage() {
   );
 }
 
-// Keep the rest of the pages.jsx routes intact...
 function App() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -1072,8 +1009,6 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/terms" element={<Terms />} />
-      
-      {/* NEW ADMIN PANEL */}
       <Route path="/av" element={<AdminDashboard />} />
 
       <Route element={<ProtectedRoute />}>
@@ -1096,8 +1031,6 @@ function App() {
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/help" element={<Help />} />
-          
-          {/* NEW CHAT */}
           <Route path="/chat" element={<Chat />} />
           <Route path="/chat/:id" element={<Chat />} />
         </Route>

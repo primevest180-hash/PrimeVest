@@ -4,7 +4,7 @@ import {
   ArrowLeft, CreditCard, Bitcoin, Wallet, Check, Copy, LockKeyhole,
   Loader2, CheckCircle2, Crown, ArrowRight, TrendingUp, Timer, Rocket, Zap,
   HelpCircle, LogOut, User, Gamepad2, ArrowUpFromLine, Clock, Gift,
-  MessageSquare, UserPlus, Send, Clock3, Menu, ShieldCheck
+  MessageSquare, UserPlus, Send, Clock3, Menu, ShieldCheck, Eye, EyeOff, Upload
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -19,6 +19,103 @@ export const Toast = ({ message, onClose }) => {
     </div>
   );
 };
+
+/* =========================== LOGIN =========================== */
+export function Login() {
+  const navigate = useNavigate();
+  const [show, setShow] = useState(false);
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault(); setError(""); setLoading(true);
+    const { error } = await api.login(form.email.trim(), form.password);
+    setLoading(false);
+    if (error) return setError(error.message || "Incorrect email or password.");
+    navigate("/home");
+  }
+
+  async function handleForgotPassword() {
+    if (!form.email) return alert("Please type your email address first, then click Forgot Password.");
+    const { error } = await supabase.auth.resetPasswordForEmail(form.email.trim(), {
+      redirectTo: `${window.location.origin}/settings`,
+    });
+    if (error) alert(error.message);
+    else alert("Password reset link sent to your email!");
+  }
+
+  async function signInWith(provider) {
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 lg:grid-cols-2">
+        <section className="hidden flex-col justify-between bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:flex">
+          <Link to="/" className="inline-flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
+              <ShieldCheck size={27} />
+            </div>
+            <span className="text-2xl font-bold">Prime<span className="text-blue-200">Vest</span></span>
+          </Link>
+          <div className="mt-24">
+            <TrendingUp size={30} />
+            <h1 className="mt-3 text-4xl font-bold">Welcome back.</h1>
+          </div>
+        </section>
+        <section className="p-6 sm:p-10 lg:p-12">
+          <p className="text-sm text-blue-400">WELCOME BACK</p>
+          <h2 className="mt-2 text-3xl font-bold">Log in</h2>
+          <form onSubmit={submit} className="mt-6 space-y-5">
+            <div>
+              <label className="mb-2 block text-sm text-slate-300">Email</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                <User className="text-slate-500" size={19} />
+                <input type="email" required value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="you@example.com" />
+              </div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm text-slate-300">Password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                <LockKeyhole className="text-slate-500" size={19} />
+                <input type={show ? "text" : "password"} required value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Your password" />
+                <button type="button" onClick={() => setShow(!show)}>
+                  {show ? <EyeOff size={19} /> : <Eye size={19} />}
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-end">
+              <button type="button" onClick={handleForgotPassword} className="text-xs text-blue-400 hover:text-blue-300">
+                Forgot Password?
+              </button>
+            </div>
+
+            {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+            <button disabled={loading}
+              className="w-full rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">
+              {loading ? "Logging in..." : "Log In"}
+            </button>
+          </form>
+          
+          <div className="mt-6 space-y-3">
+            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Continue with Google</button>
+            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Continue with GitHub</button>
+          </div>
+
+          <p className="mt-8 text-center text-sm text-slate-400">
+            Don't have an account? <Link to="/signup" className="text-blue-400">Create one</Link>
+          </p>
+        </section>
+      </div>
+    </main>
+  );
+}
 
 /* =========================== DEPOSIT =========================== */
 export function Deposit() {
@@ -608,25 +705,18 @@ export function Invest() {
   );
 }
 
-/* =========================== BONUS / SCRATCH / MYSTERY =========================== */
+/* =========================== BONUS GAME =========================== */
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
-  const [speed, setSpeed] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [emojis, setEmojis] = useState([]);
-  const clicks = useRef([]);
   const money = Math.floor(points / 2);
   const goal = 1000;
 
   const tap = (e) => {
     setPoints(p => p + 1);
-    const now = Date.now();
-    clicks.current.push(now);
-    clicks.current = clicks.current.filter(t => now - t < 1000);
-    const s = clicks.current.length;
-    setSpeed(s);
-    if (s >= 4 && Math.random() > 0.3) {
+    if (Math.random() > 0.7) {
       const list = ["💨", "😮", "🔥"];
       const emoji = list[Math.floor(Math.random() * list.length)];
       const rect = e.target.getBoundingClientRect();
@@ -648,8 +738,6 @@ export function BonusGame() {
     setPoints(0);
   };
 
-  const rotation = -85 + Math.min(speed / 15, 1) * 170;
-
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
@@ -662,26 +750,20 @@ export function BonusGame() {
         ))}
       </div>
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
-      <p className="text-sm text-slate-400 mb-6">2 points = ₦1</p>
-      <div className="w-64 h-32 relative overflow-hidden mb-6 flex justify-center items-end">
-        <div className="absolute bottom-0 w-1 h-28 bg-white origin-bottom rounded-t-full"
-          style={{ transform: `rotate(${rotation}deg)` }} />
-        <div className="absolute bottom-0 w-4 h-4 bg-white rounded-full" />
-        <div className="absolute bottom-4 flex flex-col items-center">
-          <span className="text-2xl font-black">{speed}</span>
-          <span className="text-[10px] text-slate-400 uppercase">Clicks/sec</span>
-        </div>
-      </div>
+      <p className="text-sm text-slate-400 mb-8">2 points = ₦1</p>
+      
       <div className="mb-6 flex items-baseline gap-2">
-        <span className="text-5xl font-extrabold text-blue-400">{points}</span>
+        <span className="text-6xl font-extrabold text-blue-400">{points}</span>
         <span className="text-lg text-slate-400">/ {goal}</span>
       </div>
+      
       <button onClick={tap}
         className="group relative flex h-60 w-60 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 active:scale-90 transition-transform">
         <Wallet className="h-24 w-24 opacity-40" />
       </button>
+      
       <button onClick={claim} disabled={points < goal || claiming}
-        className="mt-8 w-full max-w-sm rounded-2xl bg-emerald-500 py-4 font-bold disabled:opacity-40">
+        className="mt-10 w-full max-w-sm rounded-2xl bg-emerald-500 py-4 font-bold disabled:opacity-40">
         {claiming ? "Claiming..." : points < goal ? `Need ${goal - points} more` : `Claim ₦${money}`}
       </button>
       <style>{`@keyframes floatUp{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-150px) scale(1.5);opacity:0}}`}</style>
@@ -689,6 +771,7 @@ export function BonusGame() {
   );
 }
 
+/* =========================== SCRATCH / MYSTERY =========================== */
 export function ScratchCard() {
   const [loading, setLoading] = useState(false);
   async function buy() {
@@ -704,7 +787,7 @@ export function ScratchCard() {
       <div className="w-full max-w-sm rounded-3xl border border-emerald-500/30 bg-[#0D1526] p-8 text-center">
         <Gift className="h-16 w-16 text-emerald-400 mx-auto mb-4" />
         <h1 className="text-2xl font-bold mb-2">Scratch & Win</h1>
-        <p className="text-slate-400 text-sm mb-6">Pay ₦1,000 for a guaranteed ₦500!</p>
+        <p className="text-slate-400 text-sm mb-6">Pay ₦1,000 for a chance to win big!</p>
         <button onClick={buy} disabled={loading}
           className="w-full rounded-xl bg-emerald-600 py-4 font-bold disabled:opacity-50">
           {loading ? "Redirecting..." : "Buy for ₦1,000"}
@@ -730,7 +813,7 @@ export function MysteryBox() {
       <div className="w-full max-w-sm rounded-3xl border border-purple-500/30 bg-[#0D1526] p-8 text-center">
         <Zap className="h-16 w-16 text-purple-400 mx-auto mb-4" />
         <h1 className="text-2xl font-bold mb-2">Mystery Box</h1>
-        <p className="text-slate-400 text-sm mb-6">Pay ₦5,000 for VIP or cash!</p>
+        <p className="text-slate-400 text-sm mb-6">Pay ₦5,000 for a chance to win VIP or cash!</p>
         <button onClick={buy} disabled={loading}
           className="w-full rounded-xl bg-purple-600 py-4 font-bold disabled:opacity-50">
           {loading ? "Redirecting..." : "Buy for ₦5,000"}
@@ -978,6 +1061,10 @@ export function Settings() {
               <p className="text-sm text-slate-500">{profile.email}</p>
               <p className="text-xs text-emerald-400 mt-1">{profile.username ? `@${profile.username}` : "No username set"}</p>
             </div>
+            <label className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold hover:bg-blue-500 transition">
+              {uploading ? "Uploading..." : "Upload Photo"}
+              <input type="file" accept="image/*" onChange={uploadAvatar} className="hidden" />
+            </label>
           </div>
         </div>
 
@@ -1109,178 +1196,5 @@ export function Help() {
         </div>
       </div>
     </main>
-  );
-}
-
-/* =========================== CHAT (Mobile Responsive) =========================== */
-export function Chat() {
-  const params = new URLSearchParams(window.location.search);
-  const paramId = params.get("id");
-  const pathId = window.location.pathname.split("/chat/")[1];
-  const startWith = paramId || pathId || "admin";
-
-  const [messages, setMessages] = useState([]);
-  const [newMsg, setNewMsg] = useState("");
-  const [profile, setProfile] = useState({});
-  const [chatMode, setChatMode] = useState(startWith === "admin" ? "admin" : "friend");
-  const [targetId, setTargetId] = useState(startWith === "admin" ? "admin" : startWith);
-  const [targetName, setTargetName] = useState(startWith === "admin" ? "Admin Support" : "Friend");
-  const [friends, setFriends] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  
-  const [showSidebar, setShowSidebar] = useState(false);
-
-  useEffect(() => {
-    api.profile().then(({ data }) => data && setProfile(data));
-    api.getFriends().then(({ data }) => setFriends(data || []));
-  }, []);
-
-  useEffect(() => {
-    if (chatMode === "friend" && targetId !== "admin") {
-      const f = friends.find(x => x.friend_id === targetId);
-      if (f?.profiles?.name) setTargetName(f.profiles.name);
-    }
-  }, [friends, targetId, chatMode]);
-
-  const load = async (target) => {
-    if (!target) return;
-    setLoading(true);
-    
-    let actualTargetId = target;
-    
-    if (target === "admin") {
-      const { data: adminProfile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("is_admin", true)
-        .limit(1)
-        .single();
-        
-      if (adminProfile) {
-        actualTargetId = adminProfile.id;
-      } else {
-        console.error("No admin found in database");
-      }
-    }
-
-    const { data, error } = await api.getMessages(actualTargetId);
-    if (error) console.error("Load messages:", error);
-    setMessages(data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => { load(targetId); }, [targetId]);
-
-  async function send(e) {
-    e.preventDefault();
-    if (!newMsg.trim()) return;
-    setSending(true);
-    
-    let actualTargetId = targetId;
-    
-    if (targetId === "admin") {
-      const { data: adminProfile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("is_admin", true)
-        .limit(1)
-        .single();
-        
-      if (adminProfile) actualTargetId = adminProfile.id;
-    }
-
-    const r = await api.sendMessage(actualTargetId, newMsg.trim());
-    setSending(false);
-    if (r?.error) return alert("Send failed: " + r.error);
-    setNewMsg("");
-    await load(targetId); 
-  }
-
-  const selectChat = (mode, id, name) => {
-    setChatMode(mode);
-    setTargetId(id);
-    setTargetName(name);
-    setShowSidebar(false);
-  };
-
-  return (
-    <div className="min-h-screen bg-[#0B1120] flex flex-col">
-      <header className="p-4 border-b border-white/10 flex items-center justify-between bg-[#0D1526]">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowSidebar(!showSidebar)} className="text-white md:hidden">
-            <Menu size={24} />
-          </button>
-          <a href="/home" className="hidden md:flex items-center gap-2 text-white">
-            <ArrowLeft size={20} /> Back
-          </a>
-        </div>
-        <div className="text-center">
-          <h1 className="text-lg font-bold text-white">{targetName}</h1>
-          <p className="text-xs text-slate-400">{chatMode === "admin" ? "Support" : "Friend"}</p>
-        </div>
-        <div className="w-8 md:hidden" />
-      </header>
-
-      <div className="flex-1 flex overflow-hidden relative">
-        <div className={`absolute md:relative z-20 w-64 h-full border-r border-white/10 bg-[#0D1526] flex flex-col transition-transform duration-300 ${showSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
-          <button
-            onClick={() => selectChat("admin", "admin", "Admin Support")}
-            className={`p-4 flex items-center gap-3 ${chatMode === "admin" ? "bg-blue-600/20 border-l-4 border-blue-500" : "hover:bg-white/5"}`}>
-            <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center">
-              <ShieldCheck size={18} className="text-white" />
-            </div>
-            <div className="text-left text-white">
-              <p className="font-bold text-sm">Admin</p>
-              <p className="text-xs text-slate-400">Support</p>
-            </div>
-          </button>
-
-          <div className="p-4 border-t border-white/10 flex-1 overflow-y-auto">
-            <p className="text-xs font-bold text-slate-400 mb-3 uppercase">Friends ({friends.length})</p>
-            {friends.length === 0
-              ? <p className="text-xs text-slate-500">No friends yet. Add in Settings.</p>
-              : friends.map(f => (
-                  <button key={f.id}
-                    onClick={() => selectChat("friend", f.friend_id, f.profiles?.name || "Friend")}
-                    className={`w-full flex items-center gap-3 p-2 rounded-lg mb-1 ${targetId === f.friend_id ? "bg-slate-800" : "hover:bg-white/5"}`}>
-                    <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
-                      {(f.profiles?.name || "?")[0]}
-                    </div>
-                    <p className="text-sm text-white truncate">{f.profiles?.name || "Unknown"}</p>
-                  </button>
-                ))}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col bg-[#070D1A] w-full">
-          <div className="flex-1 p-4 overflow-y-auto space-y-3">
-            {loading
-              ? <p className="text-center text-slate-500 text-sm">Loading...</p>
-              : messages.length === 0
-                ? <p className="text-center text-slate-500 text-sm mt-10">No messages yet. Say hi 👋</p>
-                : messages.map(m => (
-                    <div key={m.id} className={`flex ${m.sender_id === profile.id ? "justify-end" : "justify-start"}`}>
-                      <div className={`p-3 rounded-2xl max-w-[85%] md:max-w-[80%] ${m.sender_id === profile.id ? "bg-blue-600 text-white rounded-tr-sm" : "bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm"}`}>
-                        <p className="text-sm break-words">{m.message}</p>
-                        <p className="text-[10px] opacity-60 mt-1 text-right">
-                          {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-          </div>
-          <form onSubmit={send} className="p-4 border-t border-white/10 bg-[#0D1526] flex gap-2">
-            <input value={newMsg} onChange={e => setNewMsg(e.target.value)}
-              placeholder={`Message ${targetName}...`}
-              className="flex-1 bg-[#070D1A] text-white rounded-xl px-4 py-3 outline-none border border-white/10" />
-            <button disabled={sending}
-              className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-500 disabled:opacity-50">
-              <Send size={20} />
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
   );
 }
