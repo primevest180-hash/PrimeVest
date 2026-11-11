@@ -8,7 +8,6 @@ import {
   Settings as SettingsIcon, LogOut, X, ArrowLeft, CreditCard, LockKeyhole,
   Building2, Bitcoin, Timer, Zap, Crown, Lock as LockIcon, CheckCircle,
   RefreshCw, Ban, Download, User, Menu, Star, Sparkles, LineChart, Globe2, Gamepad2,
-  Share2
 } from "lucide-react";
 import Terms from "./terms";
 import {
@@ -25,9 +24,7 @@ export const supabase = createClient(
 );
 
 const FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
-// YOUR REAL GOOGLE ACCOUNT ID
-export const ADMIN_UUID = "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31"; 
+export const ADMIN_UUID = "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31";
 
 async function call(path, body) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -379,30 +376,20 @@ export const api = {
     const { data: p } = await supabase.from("profiles")
       .select("referral_code, referral_earnings").eq("id", user.id).single();
     if (!p?.referral_code) return { error: "You don't have a referral code." };
-    
     const { data: refs } = await supabase.from("profiles")
       .select("id").eq("referred_by", p.referral_code);
-      
     if (!refs?.length) return { error: "No referrals yet." };
-    
-    // LOGIC: First referral = 1000, Subsequent = 200
-    let expected = 0;
-    if (refs.length === 1) expected = 1000;
-    else if (refs.length > 1) expected = 1000 + ((refs.length - 1) * 200);
-
+    const expected = refs.length * 1000;
     const current = p.referral_earnings || 0;
     if (current >= expected) return { error: "Already rewarded for all referrals." };
-    
     const pay = expected - current;
     await supabase.from("profiles").update({ referral_earnings: expected }).eq("id", user.id);
-    
     const { data: w } = await supabase.from("wallets")
       .select("available, total").eq("user_id", user.id).single();
     await supabase.from("wallets").update({
       available: (w?.available || 0) + pay,
       total: (w?.total || 0) + pay,
     }).eq("user_id", user.id);
-    
     await supabase.from("transactions").insert({
       user_id: user.id, type: "referral_bonus", amount: pay,
       status: "success", reference: `REF-${Date.now()}`,
@@ -749,6 +736,7 @@ function HomePage() {
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` },
           (payload) => {
+            // Instantly update the wallet UI when the Admin approves a withdrawal
             setWallet(payload.new);
             setToastMsg("Your wallet has been updated!");
           }
@@ -855,19 +843,13 @@ function HomePage() {
             <h2 className="mt-1 text-2xl font-bold">{profile.name}</h2>
             <p className="text-sm text-slate-500">@{profile.username}</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/signup?ref=${profile.referral_code}`); setToastMsg("Referral link copied!"); }} 
-              className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold hover:bg-blue-500 transition">
-              <Share2 size={18} /> Invite & Earn
-            </button>
-            {canClaim
-              ? <button onClick={claimDaily} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold">
-                  <Gift size={18} /> Claim ₦100
-                </button>
-              : <div className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm text-slate-400 border border-slate-700">
-                  <Timer size={18} /> {timeLeft}
-                </div>}
-          </div>
+          {canClaim
+            ? <button onClick={claimDaily} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold">
+                <Gift size={18} /> Claim ₦100
+              </button>
+            : <div className="flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm text-slate-400 border border-slate-700">
+                <Timer size={18} /> {timeLeft}
+              </div>}
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">

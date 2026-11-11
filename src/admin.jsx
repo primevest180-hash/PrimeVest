@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { Lock as LockIcon, CheckCircle, Download, ArrowLeft, Users, Wallet, MessageSquare } from "lucide-react";
-import { api, supabase, ADMIN_UUID } from "./app";
+import { api, supabase } from "./app";
+
+// Must match the admin account UID in Supabase Authentication → Users.
+const ADMIN_UUID = "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31";
 
 export function AdminDashboard() {
   const [authed, setAuthed] = useState(false);
@@ -43,13 +46,24 @@ export function AdminDashboard() {
   }
 
   async function login(e) {
-    e.preventDefault(); setError("");
-    if (password === "2468") {
-      setAuthed(true);
-      await loadData();
-    } else {
+    e.preventDefault();
+    setError("");
+
+    // Keep the temporary panel password, but also require the real Supabase
+    // admin session so RLS can verify the admin's identity for messaging.
+    if (password !== "2468") {
       setError("Incorrect password.");
+      return;
     }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user || user.id !== ADMIN_UUID) {
+      setError("First sign in to the website with the admin Supabase account, then return to this panel.");
+      return;
+    }
+
+    setAuthed(true);
+    await loadData();
   }
 
   async function approve(w) {
