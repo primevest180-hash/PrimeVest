@@ -699,9 +699,15 @@ function HomePage() {
       const r = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       w = r.data;
     }
-    const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
+    // Ask the database to create/return this account's referral code.
+    // This also repairs older profiles created before referral codes were added.
+    const [p, i, n, referral] = await Promise.all([
+      api.profile(), api.portfolio(), api.notifications(),
+      supabase.rpc("get_my_referral_code")
+    ]);
     if (w) setWallet(w);
-    if (p.data) setProfile(p.data);
+    if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
+    if (referral.error) console.error("Referral code setup:", referral.error);
     if (i.data) setInvestments(i.data);
     if (n.data) setNotifications(n.data);
     setLoading(false);

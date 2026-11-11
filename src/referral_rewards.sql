@@ -151,3 +151,39 @@ $$;
 
 REVOKE ALL ON FUNCTION public.claim_referral_rewards() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.claim_referral_rewards() TO authenticated;
+
+
+-- Always provide the logged-in user with a referral code, including accounts
+-- that existed before the referral system was installed.
+CREATE OR REPLACE FUNCTION public.get_my_referral_code()
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_code text;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'You must be logged in to get your referral link.';
+  END IF;
+
+  UPDATE public.profiles
+  SET referral_code = COALESCE(
+    NULLIF(btrim(referral_code), ''),
+    'PV' || upper(substr(replace(v_user_id::text, '-', ''), 1, 12))
+  )
+  WHERE id = v_user_id
+  RETURNING referral_code INTO v_code;
+
+  IF v_code IS NULL THEN
+    RAISE EXCEPTION 'Your profile was not found. Please contact support.';
+  END IF;
+
+  RETURN v_code;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_my_referral_code() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_my_referral_code() TO authenticated;
