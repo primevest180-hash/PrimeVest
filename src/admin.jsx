@@ -27,6 +27,7 @@ export function AdminDashboard() {
     ]);
     const s = await api.getAdminStats();
     
+    // Fetch ALL messages
     const { data: m, error: me } = await supabase
       .from("private_messages")
       .select("*")
@@ -139,7 +140,6 @@ export function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
       
-      {/* SIDEBAR */}
       <aside className="w-64 bg-[#0D1526] border-r border-white/5 flex flex-col hidden md:flex">
         <div className="p-6 border-b border-white/5">
           <h1 className="text-xl font-bold text-amber-500">PrimeVest Admin</h1>
@@ -168,7 +168,6 @@ export function AdminDashboard() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <div className="md:hidden p-4 bg-[#0D1526] border-b border-white/5 flex justify-between items-center">
            <h1 className="font-bold text-amber-500">Admin Panel</h1>

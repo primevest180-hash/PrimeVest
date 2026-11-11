@@ -37,18 +37,10 @@ export function Chat() {
     }
   }, [friends, targetId, chatMode]);
 
-  const getActualTargetId = async (target) => {
-    if (target === "admin") {
-      const { data } = await supabase.from("profiles").select("id").eq("id", ADMIN_UUID).single();
-      return data?.id || ADMIN_UUID;
-    }
-    return target;
-  };
-
   const load = async (target) => {
     if (!target) return;
     setLoading(true);
-    const actualTarget = await getActualTargetId(target);
+    const actualTarget = target === "admin" ? ADMIN_UUID : target;
     const { data, error } = await api.getMessages(actualTarget);
     if (error) console.error("Load messages:", error);
     setMessages(data || []);
@@ -61,16 +53,20 @@ export function Chat() {
     load(targetId);
     setUnreadCounts(prev => ({ ...prev, [targetId]: 0 }));
 
+    // REAL-TIME LISTENER
     const channel = supabase.channel('realtime_messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
         const newMessage = payload.new;
         
+        // If it's for the current open chat, append it
         if (
           (newMessage.sender_id === profile.id && newMessage.receiver_id === (targetId === "admin" ? ADMIN_UUID : targetId)) ||
           (newMessage.receiver_id === profile.id && newMessage.sender_id === (targetId === "admin" ? ADMIN_UUID : targetId))
         ) {
           setMessages(prev => [...prev, newMessage]);
-        } else if (newMessage.receiver_id === profile.id) {
+        } 
+        // If it's for another chat, increase the unread badge
+        else if (newMessage.receiver_id === profile.id) {
           const sender = newMessage.sender_id === ADMIN_UUID ? "admin" : newMessage.sender_id;
           setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
         }
@@ -85,7 +81,7 @@ export function Chat() {
     if (!newMsg.trim()) return;
     setSending(true);
     
-    const actualTarget = await getActualTargetId(targetId);
+    const actualTarget = targetId === "admin" ? ADMIN_UUID : targetId;
     const r = await api.sendMessage(actualTarget, newMsg.trim());
     setSending(false);
     
