@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, CreditCard, Bitcoin, Wallet, Check, Copy, LockKeyhole,
   Loader2, CheckCircle2, Crown, ArrowRight, TrendingUp, Timer, Rocket, Zap,
   HelpCircle, LogOut, User, Gamepad2, ArrowUpFromLine, Clock, Gift,
-  MessageSquare, UserPlus, Send, Clock3, Menu, ShieldCheck, Eye, EyeOff, Upload
+  MessageSquare, UserPlus, Send, Clock3, Menu, ShieldCheck, Eye, EyeOff, Upload, UserRound, Lock
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -20,7 +20,7 @@ export const Toast = ({ message, onClose }) => {
   );
 };
 
-/* =========================== LOGIN =========================== */
+/* =========================== LOGIN / SIGNUP =========================== */
 export function Login() {
   const navigate = useNavigate();
   const [show, setShow] = useState(false);
@@ -117,7 +117,6 @@ export function Login() {
   );
 }
 
-/* =========================== SIGNUP =========================== */
 export function Signup() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -810,18 +809,25 @@ export function Invest() {
   );
 }
 
-/* =========================== BONUS GAME =========================== */
+/* =========================== BONUS GAME (WITH SPEEDOMETER) =========================== */
 export function BonusGame() {
   const [points, setPoints] = useState(0);
   const [claiming, setClaiming] = useState(false);
+  const [speed, setSpeed] = useState(0);
   const [toastMsg, setToastMsg] = useState("");
   const [emojis, setEmojis] = useState([]);
+  const clicks = useRef([]);
   const money = Math.floor(points / 2);
   const goal = 1000;
 
   const tap = (e) => {
     setPoints(p => p + 1);
-    if (Math.random() > 0.7) {
+    const now = Date.now();
+    clicks.current.push(now);
+    clicks.current = clicks.current.filter(t => now - t < 1000);
+    const s = clicks.current.length;
+    setSpeed(s);
+    if (s >= 4 && Math.random() > 0.3) {
       const list = ["💨", "😮", "🔥"];
       const emoji = list[Math.floor(Math.random() * list.length)];
       const rect = e.target.getBoundingClientRect();
@@ -843,6 +849,9 @@ export function BonusGame() {
     setPoints(0);
   };
 
+  // Logic for speedometer rotation
+  const rotation = -85 + Math.min(speed / 15, 1) * 170;
+
   return (
     <div className="min-h-screen bg-[#070D1A] pb-24 text-white flex flex-col items-center justify-center px-4 relative select-none overflow-hidden">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
@@ -855,10 +864,20 @@ export function BonusGame() {
         ))}
       </div>
       <h1 className="text-2xl font-bold mb-2">Tap to Earn</h1>
-      <p className="text-sm text-slate-400 mb-8">2 points = ₦1</p>
+      <p className="text-sm text-slate-400 mb-6">2 points = ₦1</p>
+      
+      <div className="w-64 h-32 relative overflow-hidden mb-6 flex justify-center items-end">
+        <div className="absolute bottom-0 w-1 h-28 bg-white origin-bottom rounded-t-full"
+          style={{ transform: `rotate(${rotation}deg)` }} />
+        <div className="absolute bottom-0 w-4 h-4 bg-white rounded-full" />
+        <div className="absolute bottom-4 flex flex-col items-center">
+          <span className="text-2xl font-black">{speed}</span>
+          <span className="text-[10px] text-slate-400 uppercase">Clicks/sec</span>
+        </div>
+      </div>
       
       <div className="mb-6 flex items-baseline gap-2">
-        <span className="text-6xl font-extrabold text-blue-400">{points}</span>
+        <span className="text-5xl font-extrabold text-blue-400">{points}</span>
         <span className="text-lg text-slate-400">/ {goal}</span>
       </div>
       
@@ -868,7 +887,7 @@ export function BonusGame() {
       </button>
       
       <button onClick={claim} disabled={points < goal || claiming}
-        className="mt-10 w-full max-w-sm rounded-2xl bg-emerald-500 py-4 font-bold disabled:opacity-40">
+        className="mt-8 w-full max-w-sm rounded-2xl bg-emerald-500 py-4 font-bold disabled:opacity-40">
         {claiming ? "Claiming..." : points < goal ? `Need ${goal - points} more` : `Claim ₦${money}`}
       </button>
       <style>{`@keyframes floatUp{0%{transform:translateY(0);opacity:1}100%{transform:translateY(-150px) scale(1.5);opacity:0}}`}</style>
