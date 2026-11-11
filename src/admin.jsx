@@ -108,7 +108,10 @@ export function AdminDashboard() {
   }
 
   function downloadChat(userId, userName) {
-    const chatMsgs = messages.filter(m => m.sender_id === userId || m.receiver_id === userId);
+    const chatMsgs = messages.filter(m =>
+      (m.sender_id === ADMIN_UUID && m.receiver_id === userId) ||
+      (m.sender_id === userId && m.receiver_id === ADMIN_UUID)
+    );
     if (chatMsgs.length === 0) return alert("No messages for this user.");
 
     let content = `Chat History for ${userName}\n\n`;
@@ -144,12 +147,19 @@ export function AdminDashboard() {
     );
   }
 
-  const uniqueUserIds = [...new Set(messages.map(m => m.sender_id === ADMIN_UUID ? m.receiver_id : m.sender_id))]
-    .filter(id => id !== ADMIN_UUID); 
+  // Build the Inbox only from conversations involving this admin account.
+  // Keep a fallback entry when a profile is hidden by profiles-table RLS,
+  // so a valid message thread is not silently removed from the Inbox.
+  const uniqueUserIds = [...new Set(
+    messages
+      .filter(m => m.sender_id === ADMIN_UUID || m.receiver_id === ADMIN_UUID)
+      .map(m => m.sender_id === ADMIN_UUID ? m.receiver_id : m.sender_id)
+      .filter(id => id && id !== ADMIN_UUID)
+  )];
 
-  const activeChats = uniqueUserIds
-    .map(id => users.find(u => u.id === id))
-    .filter(Boolean); 
+  const activeChats = uniqueUserIds.map(id =>
+    users.find(u => u.id === id) || { id, name: "User", email: id }
+  );
 
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
@@ -264,7 +274,10 @@ export function AdminDashboard() {
                 <p className="text-slate-400">No active chats found.</p>
               ) : (
                 activeChats.map(user => {
-                  const userMsgs = messages.filter(m => m.sender_id === user.id || m.receiver_id === user.id).reverse();
+                  const userMsgs = messages.filter(m =>
+                    (m.sender_id === ADMIN_UUID && m.receiver_id === user.id) ||
+                    (m.sender_id === user.id && m.receiver_id === ADMIN_UUID)
+                  ).reverse();
                   return (
                     <div key={user.id} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
                       <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
