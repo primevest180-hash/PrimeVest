@@ -117,6 +117,111 @@ export function Login() {
   );
 }
 
+/* =========================== SIGNUP =========================== */
+export function Signup() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const referral = params.get("ref") || "";
+  const [show, setShow] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [agree, setAgree] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault(); setError("");
+    if (!agree) return setError("Agree to Terms first.");
+    if (form.name.trim().length < 2) return setError("Enter your full name.");
+    if (form.password.length < 8) return setError("Password must be 8+ chars.");
+    if (form.password !== form.confirm) return setError("Passwords don't match.");
+    setLoading(true);
+    const { error } = await api.signup(form.name.trim(), form.email.trim().toLowerCase(), form.password, referral);
+    setLoading(false);
+    if (error) return setError(error.message);
+    navigate("/home");
+  }
+
+  async function signInWith(provider) {
+    if (!agree) return setError("You must agree to the Terms & Conditions first.");
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/home` } });
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 lg:grid-cols-2">
+        <section className="hidden bg-gradient-to-br from-blue-950 via-blue-800 to-blue-600 p-10 lg:block">
+          <Link to="/" className="inline-flex items-center gap-3">
+            <ShieldCheck size={27} />
+            <span className="text-2xl font-bold">PrimeVest</span>
+          </Link>
+          <h1 className="mt-16 text-4xl font-bold">Create your PrimeVest account.</h1>
+        </section>
+        <section className="p-6 sm:p-10 lg:p-12">
+          <p className="text-sm text-blue-400">GET STARTED</p>
+          <h2 className="mt-2 text-3xl font-bold">Create account</h2>
+          
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            {[
+              { k: "name", label: "Full name", type: "text", ph: "Your name" },
+              { k: "email", label: "Email", type: "email", ph: "you@example.com" },
+            ].map(({ k, label, type, ph }) => (
+              <div key={k}>
+                <label className="mb-2 block text-sm text-slate-300">{label}</label>
+                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                  <UserRound size={19} className="text-slate-500" />
+                  <input type={type} required value={form[k]}
+                    onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+                    className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder={ph} />
+                </div>
+              </div>
+            ))}
+            <div>
+              <label className="mb-2 block text-sm text-slate-300">Password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                <Lock size={19} className="text-slate-500" />
+                <input type={show ? "text" : "password"} minLength={8} required value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="8+ characters" />
+                <button type="button" onClick={() => setShow(!show)}>
+                  {show ? <EyeOff size={19} /> : <Eye size={19} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm text-slate-300">Confirm password</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950 px-4">
+                <Lock size={19} className="text-slate-500" />
+                <input type="password" required value={form.confirm}
+                  onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+                  className="flex-1 bg-transparent py-3.5 text-sm outline-none" placeholder="Again" />
+              </div>
+            </div>
+            <button disabled={loading}
+              className="w-full rounded-xl bg-blue-600 py-3.5 font-semibold disabled:opacity-60">
+              {loading ? "Creating..." : "Create Account"}
+            </button>
+          </form>
+
+          <div className="mt-6 space-y-3">
+            <button onClick={() => signInWith("google")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100">Sign up with Google</button>
+            <button onClick={() => signInWith("github")} className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-[#24292F] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1b1f23]">Sign up with GitHub</button>
+          </div>
+
+          <div className="mt-6 flex items-center gap-2">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            <label className="text-xs text-slate-400">
+              I agree to the <Link to="/terms" className="text-blue-400">Terms</Link>
+            </label>
+          </div>
+          <p className="mt-6 text-center text-sm text-slate-400">
+            Have an account? <Link to="/login" className="text-blue-400">Log in</Link>
+          </p>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 /* =========================== DEPOSIT =========================== */
 export function Deposit() {
   const [amount, setAmount] = useState("");
