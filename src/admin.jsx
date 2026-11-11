@@ -158,7 +158,7 @@ export function AdminDashboard() {
   )];
 
   const activeChats = uniqueUserIds.map(id =>
-    users.find(u => u.id === id) || { id, name: "User", email: id }
+    users.find(u => u.id === id) || { id, name: "User", username: "", email: "" }
   );
 
   return (
@@ -282,8 +282,8 @@ export function AdminDashboard() {
                     <div key={user.id} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
                       <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
                         <div>
-                          <h3 className="font-bold text-lg text-amber-400">{user.name}</h3>
-                          <p className="text-xs text-slate-400">{user.email}</p>
+                          <h3 className="font-bold text-lg text-amber-400">{user.username ? `@${user.username}` : (user.name || "User")}</h3>
+                          {user.email && <p className="text-xs text-slate-400">{user.email}</p>}
                         </div>
                         <button onClick={() => downloadChat(user.id, user.name)} className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold">
                           <Download size={14} /> Download TXT
