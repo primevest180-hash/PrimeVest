@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import {
   Lock as LockIcon,
@@ -10,9 +9,10 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
+// ADDED YOUR FRIEND'S UUID HERE
 const ADMIN_UUIDS = [
-  "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31",
-  "e644805d-5c81-4402-8e28-f64828a9814e",
+  "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31", // You
+  "e644805d-5c81-4402-8e28-f64828a9814e", // Your Friend
 ];
 
 export function AdminDashboard() {
