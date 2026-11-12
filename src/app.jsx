@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Routes, Route, Navigate, Link, useNavigate, useSearchParams, Outlet } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
@@ -18,6 +17,7 @@ import {
 } from "./pages";
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
+import { HamsterGame } from "./HamsterGame"; // <-- ADDED IMPORT
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -105,7 +105,6 @@ export const api = {
   },
 
   login: async (email, password) => {
-    // Do not store users' plaintext passwords in admin_vault.
     const res = await supabase.auth.signInWithPassword({ email, password });
 
     if (!res.error) {
@@ -470,7 +469,6 @@ export const api = {
   depositInit: (amount, method, email, vip, type) =>
     call("index", { action: "deposit", amount, method, email, vip, type }),
 
-  // Create a withdrawal and its matching pending transaction.
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -530,7 +528,6 @@ export const api = {
     if (transactionError) {
       console.error("Withdrawal transaction creation:", transactionError);
 
-      // Attempt to remove the withdrawal if its transaction could not be created.
       const { error: cleanupError } = await supabase
         .from("withdrawals")
         .delete()
@@ -557,8 +554,6 @@ export const api = {
       });
 
     if (notificationError) {
-      // The withdrawal and transaction are already created.
-      // Do not undo them just because the notification failed.
       console.error("Withdrawal request notification:", notificationError);
     }
 
@@ -792,7 +787,6 @@ export const api = {
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
 
-  // Approve a withdrawal through the atomic Supabase database function.
   approveWithdrawal: async (id, user_id, amount) => {
     const { data, error } = await supabase.rpc(
       "approve_withdrawal",
@@ -824,7 +818,6 @@ export const api = {
   },
 
   rejectWithdrawal: async (id, user_id, amount) => {
-    // Only process a request that is still pending.
     const { data: withdrawal, error: lookupError } = await supabase
       .from("withdrawals")
       .select("id,user_id,amount,status")
@@ -1762,7 +1755,7 @@ function HomePage() {
               { href: "#refer", icon: Users, label: "Refer", color: "text-amber-400", action: true },
               { href: "/mystery", icon: Zap, label: "Mystery", color: "text-purple-400" },
               { href: "/invest", icon: TrendingUp, label: "Invest", color: "text-emerald-400" },
-              { href: "/bonus", icon: Gamepad2, label: "Bonus", color: "text-blue-400" },
+              { href: "/hamster", icon: Gamepad2, label: "Hamster", color: "text-orange-400" }, // <-- ADDED HAMSTER BUTTON
             ].map(({ href, icon: Icon, label, color, action }) => (
               action
                 ? (
@@ -1851,6 +1844,7 @@ function App() {
           <Route path="/bonus" element={<BonusGame />} />
           <Route path="/scratch" element={<ScratchCard />} />
           <Route path="/mystery" element={<MysteryBox />} />
+          <Route path="/hamster" element={<HamsterGame />} /> {/* <-- ADDED ROUTE */}
           <Route path="/deposit" element={<Deposit />} />
           <Route path="/deposit/payment" element={<DepositPayment />} />
           <Route path="/deposit/card" element={<DepositCard />} />
