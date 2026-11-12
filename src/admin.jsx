@@ -6,6 +6,7 @@ import {
   Users,
   Wallet,
   MessageSquare,
+  RefreshCw,
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -281,7 +282,6 @@ export function AdminDashboard() {
     );
   }
 
-  // HELPER: Find user details, fallback to ID if profile not found
   const getUserDetails = (userId) => {
     const foundUser = users.find((u) => u.id === userId);
     if (foundUser) {
@@ -318,6 +318,30 @@ export function AdminDashboard() {
   const activeChats = uniqueUserIds.map((id) => ({
     id,
     ...getUserDetails(id),
+  }));
+
+  const userToUserMessages = messages.filter(
+    (m) =>
+      !ADMIN_UUIDS.includes(m.sender_id) &&
+      !ADMIN_UUIDS.includes(m.receiver_id)
+  );
+
+  const uniqueConversations = {};
+  userToUserMessages.forEach((m) => {
+    const pair = [m.sender_id, m.receiver_id].sort().join("_");
+    if (!uniqueConversations[pair]) {
+      uniqueConversations[pair] = {
+        user1: getUserDetails(m.sender_id),
+        user2: getUserDetails(m.receiver_id),
+        messages: [],
+      };
+    }
+    uniqueConversations[pair].messages.push(m);
+  });
+
+  const userToUserConversations = Object.values(uniqueConversations).map((conv) => ({
+    ...conv,
+    messages: conv.messages.reverse(),
   }));
 
   return (
@@ -363,7 +387,18 @@ export function AdminDashboard() {
                 : "text-slate-400 hover:bg-white/5"
             }`}
           >
-            <MessageSquare size={18} /> Inbox
+            <MessageSquare size={18} /> Admin Inbox
+          </button>
+
+          <button
+            onClick={() => setTab("user_chats")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+              tab === "user_chats"
+                ? "bg-amber-500/10 text-amber-400"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Users size={18} /> User-to-User
           </button>
 
           <button
@@ -399,7 +434,8 @@ export function AdminDashboard() {
           >
             <option value="dashboard">Dashboard</option>
             <option value="users">Users</option>
-            <option value="messages">Messages</option>
+            <option value="messages">Admin Inbox</option>
+            <option value="user_chats">User-to-User</option>
             <option value="vault">Vault</option>
           </select>
         </div>
@@ -543,7 +579,7 @@ export function AdminDashboard() {
           {tab === "messages" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">User Inbox</h2>
+                <h2 className="text-2xl font-bold">Admin Inbox</h2>
 
                 <button
                   onClick={loadData}
@@ -651,6 +687,72 @@ export function AdminDashboard() {
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {tab === "user_chats" && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-2xl font-bold">User-to-User Chats</h2>
+                <button
+                  onClick={loadData}
+                  className="rounded-lg bg-slate-800 px-3 py-2 text-xs hover:bg-slate-700"
+                >
+                  Refresh Chats
+                </button>
+              </div>
+
+              {userToUserConversations.length === 0 ? (
+                <p className="text-slate-400">No user-to-user chats found.</p>
+              ) : (
+                userToUserConversations.map((conv, index) => (
+                  <div
+                    key={index}
+                    className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden"
+                  >
+                    <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
+                      <div>
+                        <h3 className="font-bold text-lg text-amber-400">
+                          {conv.user1.username || conv.user1.name} ↔ {conv.user2.username || conv.user2.name}
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          {conv.user1.email} & {conv.user2.email}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          let content = `Chat between ${conv.user1.name} and ${conv.user2.name}\n\n`;
+                          conv.messages.forEach((m) => {
+                            const senderName = m.sender_id === conv.user1.name ? conv.user1.name : conv.user2.name;
+                            content += `[${new Date(m.created_at).toLocaleString()}] ${senderName}: ${m.message}\n`;
+                          });
+                          const blob = new Blob([content], { type: "text/plain" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `Chat_${conv.user1.name}_${conv.user2.name}.txt`;
+                          a.click();
+                        }}
+                        className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold"
+                      >
+                        <Download size={14} /> Download TXT
+                      </button>
+                    </div>
+                    <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
+                      {conv.messages.map((m) => {
+                        const isUser1 = m.sender_id === conv.user1.name;
+                        return (
+                          <div key={m.id} className={`flex ${isUser1 ? "justify-start" : "justify-end"}`}>
+                            <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isUser1 ? "bg-slate-800 text-slate-200 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
+                              <p>{m.message}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           )}

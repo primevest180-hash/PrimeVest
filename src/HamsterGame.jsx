@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Target, Rocket,
-  CheckCircle2, Users, Flame, Crown, Sparkles, Clock, ChevronRight, Shield, Gamepad2, Wallet, X, Terminal
+  ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Rocket,
+  CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw
 } from "lucide-react";
-import { supabase, api } from "./app";
+import { supabase } from "./app";
 
 const fmt = n => Math.floor(Number(n || 0)).toLocaleString("en-US");
 const panel = "rounded-[24px] border border-white/[0.07] bg-[#111827]/90 shadow-[0_12px_40px_rgba(0,0,0,.18)]";
@@ -28,21 +28,27 @@ export function HamsterGame() {
   const [now, setNow] = useState(Date.now());
   const [tapEffect, setTapEffect] = useState(0);
   const [activeTab, setActiveTab] = useState("game");
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refreshState = useCallback(async () => {
     const { data, error } = await supabase.rpc("hamster_get_state");
     if (error) { setMessage(error.message); setMessageError(true); return; }
     setState(data);
+  }, []);
+
+  const refreshLeaderboard = useCallback(async () => {
+    setLoadingLeaderboard(true);
     const board = await supabase.rpc("hamster_leaderboard");
     if (!board.error) setLeaderboard(board.data || []);
+    setLoadingLeaderboard(false);
   }, []);
 
   useEffect(() => {
-    refresh();
+    refreshState();
+    refreshLeaderboard();
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refreshState, refreshLeaderboard]);
 
   async function run(action, args = {}) {
     if (busy) return;
@@ -53,7 +59,8 @@ export function HamsterGame() {
       if (data?.error) { setMessage(data.error); setMessageError(true); return; }
       setMessage(data?.message || "Success!");
       setMessageError(false);
-      await refresh();
+      await refreshState();
+      await refreshLeaderboard();
     } catch (err) {
       setMessage(err.message || "Something went wrong."); setMessageError(true);
     } finally {
@@ -62,20 +69,18 @@ export function HamsterGame() {
   }
 
   async function buyWithPaystack(item, price) {
-    // Redirects to our internal checkout page which handles the Paystack logic
     navigate(`/hamster/checkout?item=${item}&price=${price}`);
   }
 
   async function handleWithdraw(amount, cash) {
     if (!confirm(`Convert ${fmt(amount)} HC to ₦${fmt(cash)}?`)) return;
-    setShowWithdrawModal(false);
     await run("hamster_withdraw", { p_amount: amount, p_cash: cash });
   }
 
   if (!state) {
     return (
       <div className="min-h-screen bg-[#080D18] flex flex-col items-center justify-center text-white">
-        <div className="text-6xl animate-bounce">🐹</div>
+        <div className="text-6xl animate-bounce"><Wallet size={64} className="text-amber-400" /></div>
         <p className="mt-5 text-sm font-bold tracking-widest text-amber-300">PREPARING YOUR ARENA</p>
         {message && <p className="mt-3 text-sm text-red-300">{message}</p>}
       </div>
@@ -104,7 +109,7 @@ export function HamsterGame() {
   async function tapHamster() {
     if (busy || isLocked || state.energy <= 0) return;
     setTapEffect(v => v + 1);
-    await run("hamster_tap", { p_count: 5 });
+    await run("hamster_tap", { p_count: 5 }); // <-- PASSES 5 TAPS HERE
   }
 
   return (
@@ -178,7 +183,7 @@ export function HamsterGame() {
           <h2 className="mt-2 text-xl font-black">Tap to earn</h2>
           <button type="button" disabled={!!busy || isLocked || state.energy <= 0} onClick={tapHamster}
             className="coin-pulse relative mx-auto my-7 flex h-60 w-60 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_25%,#FFE9A6,#F6B83D_45%,#B85A18_100%)] text-[112px] active:scale-90 disabled:opacity-50">
-            <span key={tapEffect} className="hamster-float drop-shadow-lg">🐹</span>
+            <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
           </button>
           <div className="flex justify-center gap-2">
             <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{state.tap_power.toFixed(1)} HC / tap</span>
@@ -310,7 +315,12 @@ export function HamsterGame() {
 
         {/* Leaderboard */}
         <section id="hamster-rank" className="hamster-scroll mt-7">
-          <h2 className="mb-4 text-xl font-black flex items-center gap-2"><Trophy size={20} /> Leaderboard</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-black flex items-center gap-2"><Trophy size={20} /> Leaderboard</h2>
+            <button onClick={refreshLeaderboard} disabled={loadingLeaderboard} className="text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1">
+              <RefreshCw size={14} className={loadingLeaderboard ? "animate-spin" : ""} /> Refresh
+            </button>
+          </div>
           <div className={`${panel} p-2`}>
             {leaderboard.length ? leaderboard.map((p, i) => (
               <div key={p.user_id || i} className="flex items-center gap-3 rounded-xl px-3 py-3 border-b border-white/5 last:border-0">
