@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Rocket,
-  CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw
+  CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw, Terminal
 } from "lucide-react";
 import { supabase } from "./app";
 
@@ -87,16 +87,23 @@ export function HamsterGame() {
     );
   }
 
+  // Safe number conversions to prevent crashes
+  const energy = Number(state.energy) || 0;
+  const maxEnergy = Number(state.max_energy) || 1500;
+  const coins = Number(state.coins) || 0;
+  const tapPower = Number(state.tap_power) || 0.66;
+  const profitPerHour = Number(state.profit_per_hour) || 0;
+
   const isLocked = state.lockout_until && new Date(state.lockout_until).getTime() > now;
   const lockoutTime = isLocked ? new Date(new Date(state.lockout_until).getTime() - now).toISOString().substr(11, 8) : null;
-  const energyPct = Math.max(0, Math.min(100, state.max_energy ? state.energy / state.max_energy * 100 : 0));
+  const energyPct = Math.max(0, Math.min(100, maxEnergy ? (energy / maxEnergy) * 100 : 0));
   const dailyReady = !state.last_daily_claim || state.last_daily_claim !== state.today;
   const turboActive = state.turbo_until && new Date(state.turbo_until).getTime() > now;
 
   const upgrades = [
-    { key: "tap", title: "Multitap", description: "Increases HC per tap", detail: `Power: ${state.tap_power.toFixed(1)} HC`, cost: state.tap_cost, paystack: 450, icon: Coins },
-    { key: "energy", title: "Energy limit", description: "Max energy to 2,000", detail: `Capacity: ${fmt(state.max_energy)}`, cost: state.energy_cost, paystack: 1000, icon: Zap },
-    { key: "profit", title: "Profit per hour", description: "Offline earnings", detail: `Income: ${fmt(state.profit_per_hour)}/h`, cost: state.profit_cost, paystack: 2750, icon: TrendingUp },
+    { key: "tap", title: "Multitap", description: "Increases HC per tap", detail: `Power: ${tapPower.toFixed(1)} HC`, cost: state.tap_cost, paystack: 450, icon: Coins },
+    { key: "energy", title: "Energy limit", description: "Max energy to 2,000", detail: `Capacity: ${fmt(maxEnergy)}`, cost: state.energy_cost, paystack: 1000, icon: Zap },
+    { key: "profit", title: "Profit per hour", description: "Offline earnings", detail: `Income: ${fmt(profitPerHour)}/h`, cost: state.profit_cost, paystack: 2750, icon: TrendingUp },
   ];
 
   const navItems = [ { id: "game", label: "Game", icon: Gamepad2 }, { id: "mine", label: "Mine", icon: Rocket }, { id: "earn", label: "Earn", icon: Gift }, { id: "rank", label: "Ranks", icon: Trophy } ];
@@ -107,9 +114,9 @@ export function HamsterGame() {
   }
 
   async function tapHamster() {
-    if (busy || isLocked || state.energy <= 0) return;
+    if (busy || isLocked || energy <= 0) return;
     setTapEffect(v => v + 1);
-    await run("hamster_tap", { p_count: 5 }); // <-- PASSES 5 TAPS HERE
+    await run("hamster_tap", { p_count: 5 });
   }
 
   return (
@@ -139,7 +146,7 @@ export function HamsterGame() {
             <div>
               <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-200/70"><Sparkles size={13} /> Game Balance</div>
               <div className="mt-3 flex items-baseline gap-2">
-                <h1 className="text-4xl font-black">{fmt(state.coins)}</h1>
+                <h1 className="text-4xl font-black">{fmt(coins)}</h1>
                 <span className="text-sm font-black text-amber-300">HC</span>
               </div>
             </div>
@@ -150,7 +157,7 @@ export function HamsterGame() {
           <div className="relative mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/20 p-3">
               <div className="text-xs text-slate-400">Profit per hour</div>
-              <p className="mt-1 text-lg font-black text-emerald-300">+{fmt(state.profit_per_hour)}</p>
+              <p className="mt-1 text-lg font-black text-emerald-300">+{fmt(profitPerHour)}</p>
             </div>
             <div className="rounded-2xl bg-black/20 p-3">
               <div className="text-xs text-slate-400">League</div>
@@ -166,7 +173,7 @@ export function HamsterGame() {
               <Zap size={19} className="text-yellow-300" />
               <p className="text-sm font-bold">Energy</p>
             </div>
-            <p className="text-sm font-black">{fmt(state.energy)} / {fmt(state.max_energy)}</p>
+            <p className="text-sm font-black">{fmt(energy)} / {fmt(maxEnergy)}</p>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-[#263044]">
             <div className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-emerald-400" style={{ width: `${energyPct}%` }} />
@@ -181,12 +188,12 @@ export function HamsterGame() {
         {/* Tap Area */}
         <section id="hamster-game" className="hamster-scroll relative mt-5 overflow-hidden rounded-[30px] border border-amber-300/10 bg-[#172238] px-4 pb-6 pt-6 text-center">
           <h2 className="mt-2 text-xl font-black">Tap to earn</h2>
-          <button type="button" disabled={!!busy || isLocked || state.energy <= 0} onClick={tapHamster}
+          <button type="button" disabled={!!busy || isLocked || energy <= 0} onClick={tapHamster}
             className="coin-pulse relative mx-auto my-7 flex h-60 w-60 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_25%,#FFE9A6,#F6B83D_45%,#B85A18_100%)] text-[112px] active:scale-90 disabled:opacity-50">
             <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
           </button>
           <div className="flex justify-center gap-2">
-            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{state.tap_power.toFixed(1)} HC / tap</span>
+            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / tap</span>
             {turboActive && <span className="rounded-full bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200"><Flame size={13} className="inline" /> TURBO</span>}
           </div>
         </section>
@@ -296,7 +303,7 @@ export function HamsterGame() {
                   <p className="text-sm font-bold text-white">{tier.label}</p>
                   <p className="text-[10px] text-slate-400">{fmt(tier.hc)} HC</p>
                 </div>
-                <button onClick={() => handleWithdraw(tier.hc, tier.cash)} disabled={state.coins < tier.hc || !!busy} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
+                <button onClick={() => handleWithdraw(tier.hc, tier.cash)} disabled={coins < tier.hc || !!busy} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
                   ₦{fmt(tier.cash)}
                 </button>
               </div>
@@ -306,7 +313,7 @@ export function HamsterGame() {
                 <p className="text-sm font-bold text-purple-300">Sapphire</p>
                 <p className="text-[10px] text-purple-200/50">10,000,000+ HC</p>
               </div>
-              <button onClick={() => handleWithdraw(10000000, 30000)} disabled={state.coins < 10000000 || !!busy} className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
+              <button onClick={() => handleWithdraw(10000000, 30000)} disabled={coins < 10000000 || !!busy} className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
                 VIP 3 + ₦30k
               </button>
             </div>
