@@ -325,6 +325,14 @@ export const api = {
     return { success: true };
   },
 
+  rewardReferral: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: "Please log in first." };
+    const { data, error } = await supabase.rpc("claim_referral_rewards");
+    if (error) return { error: error.message };
+    return { amount: Number(data?.amount || 0), referrals: Number(data?.referrals || 0) };
+  },
+
   getAdminStats: async () => {
     const { count: usersCount } = await supabase.from("profiles").select("*", { count: "exact", head: true }).neq("id", ADMIN_UUID);
     const { data: wds } = await supabase.from("withdrawals").select("amount,status");
@@ -577,6 +585,9 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState("");
   const [timeLeft, setTimeLeft] = useState("");
+  const [referralOpen, setReferralOpen] = useState(false);
+  const [referralBusy, setReferralBusy] = useState(false);
+  const [referralStatus, setReferralStatus] = useState("");
   const [, setTick] = useState(0);
 
   const loadData = async () => {
@@ -588,9 +599,10 @@ function HomePage() {
       const r = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       w = r.data;
     }
-    const [p, i, n] = await Promise.all([api.profile(), api.portfolio(), api.notifications()]);
+    const [p, i, n, referral] = await Promise.all([api.profile(), api.portfolio(), api.notifications(), supabase.rpc("get_my_referral_code")]);
     if (w) setWallet(w);
-    if (p.data) setProfile(p.data);
+    if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
+    if (referral.error) console.error("Referral code setup:", referral.error);
     if (i.data) setInvestments(i.data);
     if (n.data) setNotifications(n.data);
     setLoading(false);
@@ -664,6 +676,28 @@ function HomePage() {
     loadData();
   }
 
+  const referralLink = profile.referral_code ? `${window.location.origin}/signup?ref=${encodeURIComponent(profile.referral_code)}` : "";
+
+  async function copyReferralLink() {
+    if (!referralLink) return setReferralStatus("Your referral code is not ready yet.");
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      setReferralStatus("Referral link copied!");
+    } catch {
+      setReferralStatus("Copy was blocked by your browser.");
+    }
+  }
+
+  async function claimReferralReward() {
+    setReferralBusy(true); setReferralStatus("");
+    const r = await api.rewardReferral();
+    setReferralBusy(false);
+    if (r.error) return setReferralStatus(r.error);
+    if (!r.amount) return setReferralStatus("No new successful referrals to reward yet.");
+    setReferralStatus(`₦${r.amount.toLocaleString("en-NG")} referral reward added to your wallet.`);
+    await loadData();
+  }
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -685,6 +719,25 @@ function HomePage() {
           </div>
         </div>
       </header>
+
+      {referralOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={() => setReferralOpen(false)}>
+          <section className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-[#0D1526] p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold">Refer & Earn</h3>
+              <button onClick={() => setReferralOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10"><X size={18} /></button>
+            </div>
+            <p className="text-sm text-slate-300">Invite friends using your personal link. Earn <strong className="text-amber-400">₦1,000 for your first referral</strong>, then <strong className="text-amber-400">₦200 for every additional.</strong></p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-slate-950 p-3">
+              <p className="mb-2 text-xs text-slate-400">Your referral link</p>
+              <p className="break-all text-sm">{referralLink || "Referral code not available"}</p>
+              <button disabled={!referralLink} onClick={copyReferralLink} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold disabled:opacity-50"><Copy size={16} /> Copy Link</button>
+            </div>
+            <button disabled={referralBusy} onClick={claimReferralReward} className="mt-4 w-full rounded-xl bg-amber-500 px-4 py-3 font-bold text-black disabled:opacity-50">{referralBusy ? "Checking..." : "Claim Referral Reward"}</button>
+            {referralStatus && <p className="mt-3 text-sm text-emerald-300">{referralStatus}</p>}
+          </section>
+        </div>
+      )}
 
       {showNotifs && (
         <div className="fixed top-20 right-4 z-50 w-80 max-h-96 overflow-y-auto rounded-2xl border border-white/10 bg-[#0D1526]">
@@ -750,14 +803,22 @@ function HomePage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
               { href: "/scratch", icon: Gift, label: "Scratch", color: "text-blue-400" },
+              { href: "#refer", icon: Users, label: "Refer", color: "text-amber-400", action: true },
               { href: "/mystery", icon: Zap, label: "Mystery", color: "text-purple-400" },
               { href: "/invest", icon: TrendingUp, label: "Invest", color: "text-emerald-400" },
               { href: "/hamster", icon: Wallet, label: "Game", color: "text-orange-400" },
-            ].map(({ href, icon: Icon, label, color }) => (
-              <a key={href} href={href} className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-blue-500/40">
-                <Icon size={23} className={`mb-2 ${color}`} />
-                <h4 className="font-semibold">{label}</h4>
-              </a>
+            ].map(({ href, icon: Icon, label, color, action }) => (
+              action ? (
+                <button key={label} onClick={() => { setReferralStatus(""); setReferralOpen(true); }} className="text-left rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-amber-500/40">
+                  <Icon size={23} className={`mb-2 ${color}`} />
+                  <h4 className="font-semibold">{label}</h4>
+                </button>
+              ) : (
+                <a key={href} href={href} className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-blue-500/40">
+                  <Icon size={23} className={`mb-2 ${color}`} />
+                  <h4 className="font-semibold">{label}</h4>
+                </a>
+              )
             ))}
           </div>
         </section>

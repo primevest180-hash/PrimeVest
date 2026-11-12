@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { api, supabase } from "./app";
 
-// ADDED YOUR FRIEND'S UUID HERE
 const ADMIN_UUIDS = [
   "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31", // You
   "e644805d-5c81-4402-8e28-f64828a9814e", // Your Friend
@@ -282,6 +281,23 @@ export function AdminDashboard() {
     );
   }
 
+  // HELPER: Find user details, fallback to ID if profile not found
+  const getUserDetails = (userId) => {
+    const foundUser = users.find((u) => u.id === userId);
+    if (foundUser) {
+      return {
+        name: foundUser.name || foundUser.username || "Unnamed User",
+        email: foundUser.email || "No email",
+        username: foundUser.username,
+      };
+    }
+    return {
+      name: "Unknown User",
+      email: userId.slice(0, 8) + "...",
+      username: null,
+    };
+  };
+
   const uniqueUserIds = [
     ...new Set(
       messages
@@ -299,15 +315,10 @@ export function AdminDashboard() {
     ),
   ];
 
-  const activeChats = uniqueUserIds.map(
-    (id) =>
-      users.find((u) => u.id === id) || {
-        id,
-        name: "User",
-        username: "",
-        email: "",
-      }
-  );
+  const activeChats = uniqueUserIds.map((id) => ({
+    id,
+    ...getUserDetails(id),
+  }));
 
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
@@ -502,7 +513,7 @@ export function AdminDashboard() {
                     >
                       <div>
                         <p className="font-bold text-lg">
-                          {u.name || "User"}
+                          {u.name || u.username || "Unnamed User"}
                         </p>
                         <p className="text-sm text-slate-400">{u.email}</p>
                         <p className="text-xs text-slate-500 mt-1">
@@ -564,11 +575,8 @@ export function AdminDashboard() {
                       <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
                         <div>
                           <h3 className="font-bold text-lg text-amber-400">
-                            {user.username
-                              ? `@${user.username}`
-                              : user.name || "User"}
+                            {user.username ? `@${user.username}` : user.name}
                           </h3>
-
                           {user.email && (
                             <p className="text-xs text-slate-400">
                               {user.email}
