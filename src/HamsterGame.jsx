@@ -1,24 +1,34 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Target, Rocket,
-  CheckCircle2, Users, Flame, Crown, Sparkles, Clock, ChevronRight, Shield, Gamepad2, Wallet
+  CheckCircle2, Users, Flame, Crown, Sparkles, Clock, ChevronRight, Shield, Gamepad2, Wallet, X, Terminal
 } from "lucide-react";
-import { supabase } from "./app";
+import { supabase, api } from "./app";
 
 const fmt = n => Math.floor(Number(n || 0)).toLocaleString("en-US");
 const panel = "rounded-[24px] border border-white/[0.07] bg-[#111827]/90 shadow-[0_12px_40px_rgba(0,0,0,.18)]";
 
+const WALLET_ICONS = {
+  Bronze: "🟤",
+  Silver: "⚪",
+  Gold: "🟡",
+  Platinum: "🩵",
+  Diamond: "💎",
+  Sapphire: "🟣"
+};
+
 export function HamsterGame() {
+  const navigate = useNavigate();
   const [state, setState] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [messageError, setMessageError] = useState(false);
-  const [transferAmount, setTransferAmount] = useState("");
   const [now, setNow] = useState(Date.now());
   const [tapEffect, setTapEffect] = useState(0);
   const [activeTab, setActiveTab] = useState("game");
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data, error } = await supabase.rpc("hamster_get_state");
@@ -51,6 +61,17 @@ export function HamsterGame() {
     }
   }
 
+  async function buyWithPaystack(item, price) {
+    // Redirects to our internal checkout page which handles the Paystack logic
+    navigate(`/hamster/checkout?item=${item}&price=${price}`);
+  }
+
+  async function handleWithdraw(amount, cash) {
+    if (!confirm(`Convert ${fmt(amount)} HC to ₦${fmt(cash)}?`)) return;
+    setShowWithdrawModal(false);
+    await run("hamster_withdraw", { p_amount: amount, p_cash: cash });
+  }
+
   if (!state) {
     return (
       <div className="min-h-screen bg-[#080D18] flex flex-col items-center justify-center text-white">
@@ -68,9 +89,9 @@ export function HamsterGame() {
   const turboActive = state.turbo_until && new Date(state.turbo_until).getTime() > now;
 
   const upgrades = [
-    { key: "tap", title: "Multitap", description: "Increases HC per tap", detail: `Power: ${fmt(state.tap_power)} HC`, cost: 100, paystack: 450, icon: Coins },
-    { key: "energy", title: "Energy limit", description: "Max energy to 2,000", detail: `Capacity: ${fmt(state.max_energy)}`, cost: 450, paystack: 1000, icon: Zap },
-    { key: "profit", title: "Profit per hour", description: "Offline earnings", detail: `Income: ${fmt(state.profit_per_hour)}/h`, cost: 750, paystack: 2750, icon: TrendingUp },
+    { key: "tap", title: "Multitap", description: "Increases HC per tap", detail: `Power: ${state.tap_power.toFixed(1)} HC`, cost: state.tap_cost, paystack: 450, icon: Coins },
+    { key: "energy", title: "Energy limit", description: "Max energy to 2,000", detail: `Capacity: ${fmt(state.max_energy)}`, cost: state.energy_cost, paystack: 1000, icon: Zap },
+    { key: "profit", title: "Profit per hour", description: "Offline earnings", detail: `Income: ${fmt(state.profit_per_hour)}/h`, cost: state.profit_cost, paystack: 2750, icon: TrendingUp },
   ];
 
   const navItems = [ { id: "game", label: "Game", icon: Gamepad2 }, { id: "mine", label: "Mine", icon: Rocket }, { id: "earn", label: "Earn", icon: Gift }, { id: "rank", label: "Ranks", icon: Trophy } ];
@@ -84,13 +105,6 @@ export function HamsterGame() {
     if (busy || isLocked || state.energy <= 0) return;
     setTapEffect(v => v + 1);
     await run("hamster_tap", { p_count: 5 });
-  }
-
-  async function handleTransfer() {
-    const amount = parseInt(transferAmount);
-    if (!amount || amount < 1000) return setMessageError(true) || setMessage("Minimum transfer is 1,000 HC.");
-    await run("hamster_transfer_to_wallet", { p_amount: amount });
-    setTransferAmount("");
   }
 
   return (
@@ -124,7 +138,9 @@ export function HamsterGame() {
                 <span className="text-sm font-black text-amber-300">HC</span>
               </div>
             </div>
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300"><Wallet size={30} /></div>
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-300/10 text-3xl">
+              {WALLET_ICONS[state.league] || "🟤"}
+            </div>
           </div>
           <div className="relative mt-6 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-black/20 p-3">
@@ -160,15 +176,12 @@ export function HamsterGame() {
         {/* Tap Area */}
         <section id="hamster-game" className="hamster-scroll relative mt-5 overflow-hidden rounded-[30px] border border-amber-300/10 bg-[#172238] px-4 pb-6 pt-6 text-center">
           <h2 className="mt-2 text-xl font-black">Tap to earn</h2>
-          <p className="mt-1 text-xs text-slate-400">3 taps = 2 HC</p>
-          
           <button type="button" disabled={!!busy || isLocked || state.energy <= 0} onClick={tapHamster}
             className="coin-pulse relative mx-auto my-7 flex h-60 w-60 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_25%,#FFE9A6,#F6B83D_45%,#B85A18_100%)] text-[112px] active:scale-90 disabled:opacity-50">
             <span key={tapEffect} className="hamster-float drop-shadow-lg">🐹</span>
           </button>
-          
           <div className="flex justify-center gap-2">
-            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{fmt(state.tap_power)} HC / tap</span>
+            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{state.tap_power.toFixed(1)} HC / tap</span>
             {turboActive && <span className="rounded-full bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200"><Flame size={13} className="inline" /> TURBO</span>}
           </div>
         </section>
@@ -196,7 +209,7 @@ export function HamsterGame() {
                 </div>
                 <div className="flex flex-col gap-1">
                   <button onClick={() => run("hamster_upgrade", { p_kind: u.key })} disabled={!!busy} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-black">BUY HC</button>
-                  <button onClick={() => window.location.href = '/deposit'} className="rounded-lg border border-white/20 px-4 py-1.5 text-[10px] font-black">PAY ₦{u.paystack}</button>
+                  <button onClick={() => buyWithPaystack(u.key, u.paystack)} className="rounded-lg border border-white/20 px-4 py-1.5 text-[10px] font-black">PAY ₦{u.paystack}</button>
                 </div>
               </div>
             ))}
@@ -205,20 +218,46 @@ export function HamsterGame() {
 
         {/* Boosts */}
         <section className="mt-7">
-          <h2 className="mb-4 text-xl font-black">Power boosts (Paystack)</h2>
+          <h2 className="mb-4 text-xl font-black">Power boosts</h2>
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => window.location.href = '/deposit'} className="rounded-[22px] border border-yellow-300/15 bg-yellow-400/5 p-4 text-left">
+            <button onClick={() => buyWithPaystack('energy', 1000)} className="rounded-[22px] border border-yellow-300/15 bg-yellow-400/5 p-4 text-left">
               <Zap size={23} className="text-yellow-300 mb-2" />
               <p className="font-black">Energy refill</p>
               <p className="text-[10px] text-slate-400">700 Energy</p>
               <p className="mt-2 text-xs font-black text-yellow-300">₦1,000</p>
             </button>
-            <button onClick={() => window.location.href = '/deposit'} className="rounded-[22px] border border-purple-300/15 bg-purple-400/5 p-4 text-left">
+            <button onClick={() => buyWithPaystack('turbo', 2500)} className="rounded-[22px] border border-purple-300/15 bg-purple-400/5 p-4 text-left">
               <Flame size={23} className="text-purple-300 mb-2" />
               <p className="font-black">Turbo mode</p>
-              <p className="text-[10px] text-slate-400">1,250 Energy + 2x power</p>
+              <p className="text-[10px] text-slate-400">1,250 Energy + 2x</p>
               <p className="mt-2 text-xs font-black text-purple-300">₦2,500</p>
             </button>
+          </div>
+        </section>
+
+        {/* Wallet Hack */}
+        <section className="mt-7 rounded-[25px] border-2 border-emerald-500/40 bg-[#0A1A12] p-5 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+          <div className="relative">
+            <div className="flex items-center gap-3">
+              <Terminal size={24} className="text-emerald-400" />
+              <div>
+                <h2 className="font-black text-emerald-400 uppercase tracking-widest text-sm">Wallet Hack</h2>
+                <p className="text-[10px] text-emerald-200/50">Bypass the system.</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-emerald-100/80 leading-relaxed">
+              Buy the wallet hack which will grant you <strong className="text-white">30,000 HC + VIP 1 + Faster Taps + Energy Boost to 5,000.</strong>
+            </p>
+            {state.has_hack ? (
+              <div className="mt-4 w-full rounded-xl bg-emerald-500/20 py-3 text-center text-sm font-black text-emerald-300 border border-emerald-500/30">
+                HACK ACTIVATED
+              </div>
+            ) : (
+              <button onClick={() => buyWithPaystack('hack', 15500)} className="mt-4 w-full rounded-xl bg-gradient-to-r from-red-600 to-emerald-600 py-3 text-sm font-black text-white hover:brightness-110">
+                BUY FOR ₦15,500
+              </button>
+            )}
           </div>
         </section>
 
@@ -233,15 +272,39 @@ export function HamsterGame() {
           </button>
         </section>
 
-        {/* Transfer to Wallet */}
+        {/* Withdrawal Tiers */}
         <section className="mt-7 rounded-[25px] border border-indigo-300/15 bg-[#1A1D31] p-5">
           <div className="flex items-center gap-3">
             <Wallet size={23} className="text-indigo-300" />
-            <div><h2 className="font-black">Transfer to Wallet</h2><p className="text-[10px] text-indigo-200/50">1,000 HC = ₦1</p></div>
+            <div><h2 className="font-black">Withdraw Cash</h2><p className="text-[10px] text-indigo-200/50">Convert your HC</p></div>
           </div>
-          <div className="mt-4 flex gap-2">
-            <input type="number" placeholder="Enter HC amount" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} className="w-full rounded-xl bg-[#0B1020] px-4 py-3 text-sm text-white outline-none" />
-            <button onClick={handleTransfer} disabled={!!busy} className="rounded-xl bg-indigo-600 px-6 font-black text-sm">TRANSFER</button>
+          <div className="mt-4 space-y-3">
+            {[
+              { label: "Bronze", hc: 49999, cash: 2000 },
+              { label: "Silver", hc: 249999, cash: 5000 },
+              { label: "Gold", hc: 999999, cash: 8000 },
+              { label: "Platinum", hc: 4999999, cash: 18000 },
+              { label: "Diamond", hc: 9999999, cash: 25000 },
+            ].map(tier => (
+              <div key={tier.label} className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0B1020] p-3">
+                <div>
+                  <p className="text-sm font-bold text-white">{tier.label}</p>
+                  <p className="text-[10px] text-slate-400">{fmt(tier.hc)} HC</p>
+                </div>
+                <button onClick={() => handleWithdraw(tier.hc, tier.cash)} disabled={state.coins < tier.hc || !!busy} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
+                  ₦{fmt(tier.cash)}
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between rounded-xl border border-purple-500/30 bg-purple-900/20 p-3">
+              <div>
+                <p className="text-sm font-bold text-purple-300">Sapphire</p>
+                <p className="text-[10px] text-purple-200/50">10,000,000+ HC</p>
+              </div>
+              <button onClick={() => handleWithdraw(10000000, 30000)} disabled={state.coins < 10000000 || !!busy} className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-bold disabled:opacity-50">
+                VIP 3 + ₦30k
+              </button>
+            </div>
           </div>
         </section>
 

@@ -17,7 +17,8 @@ import {
 } from "./pages";
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
-import { HamsterGame } from "./HamsterGame"; // <-- IMPORTED WALLET GAME
+import { HamsterGame } from "./HamsterGame";
+import { HamsterCheckout } from "./HamsterCheckout";
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -806,7 +807,7 @@ function HomePage() {
               { href: "#refer", icon: Users, label: "Refer", color: "text-amber-400", action: true },
               { href: "/mystery", icon: Zap, label: "Mystery", color: "text-purple-400" },
               { href: "/invest", icon: TrendingUp, label: "Invest", color: "text-emerald-400" },
-              { href: "/hamster", icon: Gamepad2, label: "Wallet Game", color: "text-orange-400" }, // UPDATED
+              { href: "/hamster", icon: Gamepad2, label: "Game", color: "text-orange-400" },
             ].map(({ href, icon: Icon, label, color, action }) => (
               action ? (
                 <button key={label} onClick={() => { setReferralStatus(""); setReferralOpen(true); }} className="text-left rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-amber-500/40">
@@ -832,7 +833,7 @@ function HomePage() {
             { href: "/home", icon: HomeIcon, label: "Home" },
             { href: "/invest", icon: TrendingUp, label: "Invest" },
             { href: "/vip", icon: Crown, label: "VIP" },
-            { href: "/hamster", icon: Wallet, label: "Wallet Game" }, // UPDATED
+            { href: "/hamster", icon: Wallet, label: "Game" },
             { href: "/withdraw", icon: ArrowUpFromLine, label: "Withdraw" },
             { href: "/settings", icon: SettingsIcon, label: "Settings" },
           ].map(({ href, icon: Icon, label }) => (
@@ -868,6 +869,7 @@ function App() {
           <Route path="/vip/checkout" element={<VIPCheckout />} />
           <Route path="/invest" element={<Invest />} />
           <Route path="/hamster" element={<HamsterGame />} />
+          <Route path="/hamster/checkout" element={<HamsterCheckout />} />
           <Route path="/scratch" element={<ScratchCard />} />
           <Route path="/mystery" element={<MysteryBox />} />
           <Route path="/deposit" element={<Deposit />} />
