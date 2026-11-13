@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import {
   Lock as LockIcon,
@@ -326,8 +325,7 @@ export function AdminDashboard() {
     );
   }
 
-  // Get the correct user profile using the sender/receiver UUID.
-  // Username is preferred over name and email.
+  // HELPER: Find user details, fallback to ID if profile not found
   const getUserDetails = (userId) => {
     if (ADMIN_UUIDS.includes(userId)) {
       return {
@@ -361,8 +359,8 @@ export function AdminDashboard() {
 
     return {
       id: userId,
-      name: "Profile unavailable",
-      email: "Check profiles table access / RLS",
+      name: "User",
+      email: "Profile loading...",
       username: null,
     };
   };
