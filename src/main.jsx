@@ -1,11 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-// Make sure this path matches your file name exactly (app.jsx or App.jsx)
-import App from './app.jsx' 
-import './index.css' // Keep this if you have a global CSS file
+import { BrowserRouter } from 'react-router-dom' // <--- THIS IS THE FIX
+import App from './app.jsx'
+import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </React.StrictMode>,
 )
