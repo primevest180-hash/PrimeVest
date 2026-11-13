@@ -1,10 +1,23 @@
-self.addEventListener('push', function(event) {
-  const options = {
-    body: event.data ? event.data.text() : 'New update from PrimeVest!',
-    icon: 'https://cdn-icons-png.flaticon.com/512/2665/2665558.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/2665/2665558.png',
-    vibrate: [100, 50, 100],
-    data: { dateOfArrival: Date.now(), primaryKey: 1 }
-  };
-  event.waitUntil(self.registration.showNotification('PrimeVest', options));
+const CACHE = 'primevest-v2';
+const ASSETS = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(
+      keys.map((key) => { if (key !== CACHE) return caches.delete(key); })
+    ))
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    caches.match(e.request).then((hit) => hit || fetch(e.request))
+  );
 });
