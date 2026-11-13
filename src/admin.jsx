@@ -281,21 +281,26 @@ export function AdminDashboard() {
     );
   }
 
-  // HELPER: Find user details, fallback to ID if profile not found
+  // HELPER: Find user details, fallback to Email if profile is incomplete
   const getUserDetails = (userId) => {
-    // Check if it's the fake admin UUID
     if (userId === "00000000-0000-0000-0000-000000000000") {
       return { name: "Support Admin", email: "admin@primevest.com", username: "admin" };
     }
     
     const foundUser = users.find((u) => u.id === userId);
     if (foundUser) {
+      // Fallback order: Username -> Name -> Email -> Truncated ID
+      const displayName = foundUser.username 
+        ? `@${foundUser.username}` 
+        : foundUser.name || foundUser.email || "Unknown User";
+        
       return {
-        name: foundUser.name || foundUser.username || "Unnamed User",
+        name: displayName,
         email: foundUser.email || "No email",
         username: foundUser.username,
       };
     }
+    
     return {
       name: "Unknown User",
       email: userId ? userId.slice(0, 8) + "..." : "No ID",
@@ -555,11 +560,11 @@ export function AdminDashboard() {
                     >
                       <div>
                         <p className="font-bold text-lg">
-                          {u.name || u.username || "Unnamed User"}
+                          {u.username ? `@${u.username}` : u.name || "Unnamed User"}
                         </p>
                         <p className="text-sm text-slate-400">{u.email}</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          @{u.username || "none"} | Status: {u.account_status || "active"}
+                          Status: {u.account_status || "active"}
                         </p>
                       </div>
 
@@ -617,7 +622,7 @@ export function AdminDashboard() {
                       <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
                         <div>
                           <h3 className="font-bold text-lg text-amber-400">
-                            {user.username ? `@${user.username}` : user.name}
+                            {user.name}
                           </h3>
                           {user.email && (
                             <p className="text-xs text-slate-400">
@@ -627,7 +632,7 @@ export function AdminDashboard() {
                         </div>
 
                         <button
-                          onClick={() => downloadChat(user.id, user.username || user.name)}
+                          onClick={() => downloadChat(user.id, user.name)}
                           className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold"
                         >
                           <Download size={14} /> Download TXT
@@ -720,7 +725,7 @@ export function AdminDashboard() {
                     <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
                       <div>
                         <h3 className="font-bold text-lg text-amber-400">
-                          {conv.user1.username || conv.user1.name} ↔ {conv.user2.username || conv.user2.name}
+                          {conv.user1.name} ↔ {conv.user2.name}
                         </h3>
                         <p className="text-xs text-slate-400">
                           {conv.user1.email} & {conv.user2.email}
@@ -730,7 +735,7 @@ export function AdminDashboard() {
                         onClick={() => {
                           let content = `Chat between ${conv.user1.name} and ${conv.user2.name}\n\n`;
                           conv.messages.forEach((m) => {
-                            const senderName = m.sender_id === conv.user1.name ? conv.user1.name : conv.user2.name;
+                            const senderName = m.sender_id === conv.user1.username ? conv.user1.name : conv.user2.name;
                             content += `[${new Date(m.created_at).toLocaleString()}] ${senderName}: ${m.message}\n`;
                           });
                           const blob = new Blob([content], { type: "text/plain" });
@@ -747,7 +752,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
                       {conv.messages.map((m) => {
-                        const isUser1 = m.sender_id === conv.user1.name;
+                        const isUser1 = m.sender_id === conv.user1.username;
                         return (
                           <div key={m.id} className={`flex ${isUser1 ? "justify-start" : "justify-end"}`}>
                             <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isUser1 ? "bg-slate-800 text-slate-200 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
