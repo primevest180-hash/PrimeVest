@@ -6,7 +6,6 @@ import {
   Users,
   Wallet,
   MessageSquare,
-  RefreshCw,
 } from "lucide-react";
 import { api, supabase } from "./app";
 
@@ -282,7 +281,13 @@ export function AdminDashboard() {
     );
   }
 
+  // HELPER: Find user details, fallback to ID if profile not found
   const getUserDetails = (userId) => {
+    // Check if it's the fake admin UUID
+    if (userId === "00000000-0000-0000-0000-000000000000") {
+      return { name: "Support Admin", email: "admin@primevest.com", username: "admin" };
+    }
+    
     const foundUser = users.find((u) => u.id === userId);
     if (foundUser) {
       return {
@@ -293,7 +298,7 @@ export function AdminDashboard() {
     }
     return {
       name: "Unknown User",
-      email: userId.slice(0, 8) + "...",
+      email: userId ? userId.slice(0, 8) + "..." : "No ID",
       username: null,
     };
   };
@@ -320,6 +325,7 @@ export function AdminDashboard() {
     ...getUserDetails(id),
   }));
 
+  // USER TO USER CHATS
   const userToUserMessages = messages.filter(
     (m) =>
       !ADMIN_UUIDS.includes(m.sender_id) &&

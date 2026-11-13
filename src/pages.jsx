@@ -849,7 +849,6 @@ export function BonusGame() {
     setPoints(0);
   };
 
-  // Logic for speedometer rotation
   const rotation = -85 + Math.min(speed / 15, 1) * 170;
 
   return (
@@ -1071,7 +1070,7 @@ export function History() {
   );
 }
 
-/* =========================== SETTINGS =========================== */
+/* =========================== SETTINGS (PAID USERNAME CHANGE) =========================== */
 export function Settings() {
   const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "", username: "" });
   const [uploading, setUploading] = useState(false);
@@ -1083,6 +1082,7 @@ export function Settings() {
   const [outgoing, setOutgoing] = useState([]);
   const [newFriend, setNewFriend] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [, setTick] = useState(0);
 
   const reload = async () => {
@@ -1129,11 +1129,19 @@ export function Settings() {
     finally { setUploading(false); }
   }
 
-  async function setUsername() {
+  async function handleChangeUsername() {
     if (usernameInput.length < 3) return alert("Min 3 chars.");
-    const r = await api.setUsername(usernameInput);
-    if (r.error) return alert(r.error);
-    alert("Username set!");
+    if (!confirm("You will be charged ₦1,000 from your wallet to change your username. Proceed?")) return;
+    
+    setBusy(true);
+    const { data, error } = await supabase.rpc("change_username_charged", { new_username: usernameInput });
+    setBusy(false);
+
+    if (error) return alert("Database error: " + error.message);
+    if (data.error) return alert(data.error);
+
+    alert("Username changed successfully!");
+    setShowUsernameModal(false);
     await reload();
   }
 
@@ -1175,6 +1183,7 @@ export function Settings() {
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-8 space-y-4">
+        
         <div className="rounded-2xl border border-blue-400/10 bg-slate-900 p-5">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 overflow-hidden rounded-full border border-blue-400/30 bg-blue-500/10 flex items-center justify-center">
@@ -1192,14 +1201,47 @@ export function Settings() {
           </div>
         </div>
 
-        {!profile.username && (
+        {/* USERNAME CHANGE SECTION */}
+        {profile.username ? (
+          <div className="rounded-2xl border border-blue-400/10 bg-slate-900 p-5 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold">Change Username</h3>
+              <p className="text-xs text-slate-400">Costs ₦1,000 per change.</p>
+            </div>
+            <button onClick={() => setShowUsernameModal(true)} className="bg-slate-800 px-4 py-2 rounded-xl font-bold text-sm border border-white/10 hover:bg-slate-700">
+              Change
+            </button>
+          </div>
+        ) : (
           <div className="rounded-2xl border border-amber-500/30 bg-[#1A1500] p-5">
             <h3 className="font-bold text-amber-500 mb-2">Set Your Username</h3>
             <div className="flex gap-2">
               <input value={usernameInput} onChange={e => setUsernameInput(e.target.value.replace(/\s/g, ""))}
                 placeholder="john_doe"
                 className="flex-1 rounded-xl bg-slate-950 px-4 py-2" />
-              <button onClick={setUsername} className="bg-amber-500 text-black px-4 py-2 rounded-xl font-bold">Save</button>
+              <button onClick={async () => {
+                if (usernameInput.length < 3) return alert("Min 3 chars.");
+                const r = await api.setUsername(usernameInput);
+                if (r.error) return alert(r.error);
+                alert("Username set!");
+                await reload();
+              }} className="bg-amber-500 text-black px-4 py-2 rounded-xl font-bold">Save</button>
+            </div>
+          </div>
+        )}
+
+        {showUsernameModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-6 text-center">
+              <h3 className="text-xl font-bold mb-2">New Username</h3>
+              <p className="text-xs text-slate-400 mb-4">This will deduct ₦1,000 from your wallet.</p>
+              <input value={usernameInput} onChange={e => setUsernameInput(e.target.value.replace(/\s/g, ""))} placeholder="New username" className="w-full bg-slate-950 rounded-xl px-4 py-3 text-center mb-4 outline-none" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowUsernameModal(false)} className="flex-1 bg-slate-800 py-3 rounded-xl font-bold">Cancel</button>
+                <button onClick={handleChangeUsername} disabled={busy} className="flex-1 bg-amber-500 text-black py-3 rounded-xl font-bold disabled:opacity-50">
+                  {busy ? "..." : "Pay ₦1,000"}
+                </button>
+              </div>
             </div>
           </div>
         )}
