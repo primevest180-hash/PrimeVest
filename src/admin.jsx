@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import {
   Lock as LockIcon,
@@ -10,8 +11,8 @@ import {
 import { api, supabase } from "./app";
 
 const ADMIN_UUIDS = [
-  "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31", // You
-  "e644805d-5c81-4402-8e28-f64828a9814e", // Your Friend
+  "a95d9e9b-00dd-473f-a13b-0ee77eb9ae31",
+  "e644805d-5c81-4402-8e28-f64828a9814e",
 ];
 
 export function AdminDashboard() {
@@ -25,6 +26,7 @@ export function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [vault, setVault] = useState([]);
   const [messages, setMessages] = useState([]);
+
   const [stats, setStats] = useState({
     usersCount: 0,
     totalWithdrawn: 0,
@@ -56,7 +58,16 @@ export function AdminDashboard() {
 
       if (messageResult.error) {
         console.error("Admin messages:", messageResult.error);
-        setError("Messages could not be loaded: " + messageResult.error.message);
+        setError(
+          "Messages could not be loaded: " +
+            messageResult.error.message
+        );
+      } else if (u?.error) {
+        console.error("Admin profiles:", u.error);
+        setError(
+          "User profiles could not be loaded: " +
+            u.error.message
+        );
       } else {
         setError("");
       }
@@ -65,11 +76,14 @@ export function AdminDashboard() {
       setUsers(u?.data || []);
       setVault(v?.data || []);
       setMessages(messageResult.data || []);
-      setStats(s || {
-        usersCount: 0,
-        totalWithdrawn: 0,
-        pendingWithdrawals: 0,
-      });
+
+      setStats(
+        s || {
+          usersCount: 0,
+          totalWithdrawn: 0,
+          pendingWithdrawals: 0,
+        }
+      );
     } catch (err) {
       console.error("Admin data loading error:", err);
       setError(err.message || "Failed to load admin data.");
@@ -104,12 +118,18 @@ export function AdminDashboard() {
   }
 
   async function approve(w) {
-    if (!confirm(`Approve ₦${Number(w.amount).toLocaleString()}?`)) return;
+    if (!confirm(`Approve ₦${Number(w.amount).toLocaleString()}?`)) {
+      return;
+    }
 
     setProcessing(w.id);
 
     try {
-      const result = await api.approveWithdrawal(w.id, w.user_id, w.amount);
+      const result = await api.approveWithdrawal(
+        w.id,
+        w.user_id,
+        w.amount
+      );
 
       if (result?.error) {
         alert("Approval failed: " + result.error.message);
@@ -125,12 +145,18 @@ export function AdminDashboard() {
   }
 
   async function reject(w) {
-    if (!confirm(`Reject ₦${Number(w.amount).toLocaleString()}?`)) return;
+    if (!confirm(`Reject ₦${Number(w.amount).toLocaleString()}?`)) {
+      return;
+    }
 
     setProcessing(w.id);
 
     try {
-      const result = await api.rejectWithdrawal(w.id, w.user_id, w.amount);
+      const result = await api.rejectWithdrawal(
+        w.id,
+        w.user_id,
+        w.amount
+      );
 
       if (result?.error) {
         alert("Rejection failed: " + result.error.message);
@@ -146,12 +172,19 @@ export function AdminDashboard() {
   }
 
   async function freeze(u) {
-    if (!confirm(`Toggle freeze for ${u.name || u.email || "this user"}?`)) {
+    if (
+      !confirm(
+        `Toggle freeze for ${u.name || u.email || "this user"}?`
+      )
+    ) {
       return;
     }
 
     try {
-      const result = await api.toggleUserFreeze(u.id, u.account_status);
+      const result = await api.toggleUserFreeze(
+        u.id,
+        u.account_status
+      );
 
       if (result?.error) {
         alert("User update failed: " + result.error.message);
@@ -202,8 +235,10 @@ export function AdminDashboard() {
   function downloadChat(userId, userName) {
     const chatMsgs = messages.filter(
       (m) =>
-        (ADMIN_UUIDS.includes(m.sender_id) && m.receiver_id === userId) ||
-        (m.sender_id === userId && ADMIN_UUIDS.includes(m.receiver_id))
+        (ADMIN_UUIDS.includes(m.sender_id) &&
+          m.receiver_id === userId) ||
+        (m.sender_id === userId &&
+          ADMIN_UUIDS.includes(m.receiver_id))
     );
 
     if (chatMsgs.length === 0) {
@@ -218,15 +253,23 @@ export function AdminDashboard() {
         ? "Admin"
         : userName || "User";
 
-      content += `[${new Date(m.created_at).toLocaleString()}] ${sender}: ${m.message}\n`;
+      content += `[${new Date(
+        m.created_at
+      ).toLocaleString()}] ${sender}: ${m.message}\n`;
     });
 
-    const blob = new Blob([content], { type: "text/plain" });
+    const blob = new Blob([content], {
+      type: "text/plain",
+    });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
 
     a.href = url;
-    a.download = `Chat_${(userName || "User").replace(/[^a-z0-9_-]/gi, "_")}.txt`;
+    a.download = `Chat_${(userName || "User").replace(
+      /[^a-z0-9_-]/gi,
+      "_"
+    )}.txt`;
 
     document.body.appendChild(a);
     a.click();
@@ -267,7 +310,9 @@ export function AdminDashboard() {
           />
 
           {error && (
-            <p className="text-red-400 text-sm mb-4">{error}</p>
+            <p className="text-red-400 text-sm mb-4">
+              {error}
+            </p>
           )}
 
           <button
@@ -281,33 +326,48 @@ export function AdminDashboard() {
     );
   }
 
-  // HELPER: Find user details, fallback to Email if profile is incomplete
+  // Get the correct user profile using the sender/receiver UUID.
+  // Username is preferred over name and email.
   const getUserDetails = (userId) => {
-    if (userId === "00000000-0000-0000-0000-000000000000") {
-      return { name: "Support Admin", email: "admin@primevest.com", username: "admin" };
-    }
-    
-    const foundUser = users.find((u) => u.id === userId);
-    if (foundUser) {
-      // Fallback order: Username -> Name -> Email -> Truncated ID
-      const displayName = foundUser.username 
-        ? `@${foundUser.username}` 
-        : foundUser.name || foundUser.email || "Unknown User";
-        
+    if (ADMIN_UUIDS.includes(userId)) {
       return {
-        name: displayName,
-        email: foundUser.email || "No email",
-        username: foundUser.username,
+        id: userId,
+        name: "Support Admin",
+        email: "admin@primevest.com",
+        username: "admin",
       };
     }
-    
+
+    const foundUser = users.find(
+      (profile) => profile.id === userId
+    );
+
+    if (foundUser) {
+      const username = foundUser.username
+        ? String(foundUser.username).replace(/^@/, "")
+        : "";
+
+      return {
+        id: userId,
+        name: username
+          ? `@${username}`
+          : foundUser.name ||
+            foundUser.email ||
+            "Unnamed User",
+        email: foundUser.email || "Email unavailable",
+        username: username || null,
+      };
+    }
+
     return {
-      name: "Unknown User",
-      email: userId ? userId.slice(0, 8) + "..." : "No ID",
+      id: userId,
+      name: "Profile unavailable",
+      email: "Check profiles table access / RLS",
       username: null,
     };
   };
 
+  // ADMIN INBOX: only conversations involving an admin account.
   const uniqueUserIds = [
     ...new Set(
       messages
@@ -321,7 +381,9 @@ export function AdminDashboard() {
             ? m.receiver_id
             : m.sender_id
         )
-        .filter((id) => id && !ADMIN_UUIDS.includes(id))
+        .filter(
+          (id) => id && !ADMIN_UUIDS.includes(id)
+        )
     ),
   ];
 
@@ -330,7 +392,7 @@ export function AdminDashboard() {
     ...getUserDetails(id),
   }));
 
-  // USER TO USER CHATS
+  // USER-TO-USER CHATS: exclude all admin accounts.
   const userToUserMessages = messages.filter(
     (m) =>
       !ADMIN_UUIDS.includes(m.sender_id) &&
@@ -338,19 +400,31 @@ export function AdminDashboard() {
   );
 
   const uniqueConversations = {};
+
   userToUserMessages.forEach((m) => {
-    const pair = [m.sender_id, m.receiver_id].sort().join("_");
+    const [user1Id, user2Id] = [
+      m.sender_id,
+      m.receiver_id,
+    ].sort();
+
+    const pair = `${user1Id}_${user2Id}`;
+
     if (!uniqueConversations[pair]) {
       uniqueConversations[pair] = {
-        user1: getUserDetails(m.sender_id),
-        user2: getUserDetails(m.receiver_id),
+        user1Id,
+        user2Id,
+        user1: getUserDetails(user1Id),
+        user2: getUserDetails(user2Id),
         messages: [],
       };
     }
+
     uniqueConversations[pair].messages.push(m);
   });
 
-  const userToUserConversations = Object.values(uniqueConversations).map((conv) => ({
+  const userToUserConversations = Object.values(
+    uniqueConversations
+  ).map((conv) => ({
     ...conv,
     messages: conv.messages.reverse(),
   }));
@@ -436,7 +510,9 @@ export function AdminDashboard() {
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <div className="md:hidden p-4 bg-[#0D1526] border-b border-white/5 flex justify-between items-center">
-          <h1 className="font-bold text-amber-500">Admin Panel</h1>
+          <h1 className="font-bold text-amber-500">
+            Admin Panel
+          </h1>
 
           <select
             onChange={(e) => setTab(e.target.value)}
@@ -483,7 +559,9 @@ export function AdminDashboard() {
                     Total Withdrawn
                   </p>
                   <p className="text-4xl font-bold text-emerald-400">
-                    ₦{Number(stats.totalWithdrawn || 0).toLocaleString()}
+                    ₦{Number(
+                      stats.totalWithdrawn || 0
+                    ).toLocaleString()}
                   </p>
                 </div>
 
@@ -492,7 +570,9 @@ export function AdminDashboard() {
                     Pending Withdrawals
                   </p>
                   <p className="text-4xl font-bold text-amber-400">
-                    ₦{Number(stats.pendingWithdrawals || 0).toLocaleString()}
+                    ₦{Number(
+                      stats.pendingWithdrawals || 0
+                    ).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -517,7 +597,8 @@ export function AdminDashboard() {
                           ₦{Number(w.amount).toLocaleString()}
                         </p>
                         <p className="text-sm text-slate-400 mt-1">
-                          {w.account_name} - {w.account_number} ({w.bank_name})
+                          {w.account_name} - {w.account_number} (
+                          {w.bank_name})
                         </p>
                       </div>
 
@@ -551,7 +632,9 @@ export function AdminDashboard() {
 
               <div className="space-y-4">
                 {users.length === 0 ? (
-                  <p className="text-slate-400">No users found.</p>
+                  <p className="text-slate-400">
+                    No users found.
+                  </p>
                 ) : (
                   users.map((u) => (
                     <div
@@ -560,9 +643,13 @@ export function AdminDashboard() {
                     >
                       <div>
                         <p className="font-bold text-lg">
-                          {u.username ? `@${u.username}` : u.name || "Unnamed User"}
+                          {u.username
+                            ? `@${String(u.username).replace(/^@/, "")}`
+                            : u.name || "Unnamed User"}
                         </p>
-                        <p className="text-sm text-slate-400">{u.email}</p>
+                        <p className="text-sm text-slate-400">
+                          {u.email}
+                        </p>
                         <p className="text-xs text-slate-500 mt-1">
                           Status: {u.account_status || "active"}
                         </p>
@@ -590,7 +677,9 @@ export function AdminDashboard() {
           {tab === "messages" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">Admin Inbox</h2>
+                <h2 className="text-2xl font-bold">
+                  Admin Inbox
+                </h2>
 
                 <button
                   onClick={loadData}
@@ -601,7 +690,9 @@ export function AdminDashboard() {
               </div>
 
               {activeChats.length === 0 ? (
-                <p className="text-slate-400">No active chats found.</p>
+                <p className="text-slate-400">
+                  No active chats found.
+                </p>
               ) : (
                 activeChats.map((user) => {
                   const userMsgs = messages
@@ -632,7 +723,9 @@ export function AdminDashboard() {
                         </div>
 
                         <button
-                          onClick={() => downloadChat(user.id, user.name)}
+                          onClick={() =>
+                            downloadChat(user.id, user.name)
+                          }
                           className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold"
                         >
                           <Download size={14} /> Download TXT
@@ -641,13 +734,17 @@ export function AdminDashboard() {
 
                       <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
                         {userMsgs.map((m) => {
-                          const isAdmin = ADMIN_UUIDS.includes(m.sender_id);
+                          const isAdmin = ADMIN_UUIDS.includes(
+                            m.sender_id
+                          );
 
                           return (
                             <div
                               key={m.id}
                               className={`flex ${
-                                isAdmin ? "justify-end" : "justify-start"
+                                isAdmin
+                                  ? "justify-end"
+                                  : "justify-start"
                               }`}
                             >
                               <div
@@ -682,7 +779,9 @@ export function AdminDashboard() {
                             }))
                           }
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") replyToUser(user.id);
+                            if (e.key === "Enter") {
+                              replyToUser(user.id);
+                            }
                           }}
                           className="flex-1 min-w-0 rounded-lg bg-[#070D1A] border border-white/10 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                         />
@@ -705,7 +804,10 @@ export function AdminDashboard() {
           {tab === "user_chats" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">User-to-User Chats</h2>
+                <h2 className="text-2xl font-bold">
+                  User-to-User Chats
+                </h2>
+
                 <button
                   onClick={loadData}
                   className="rounded-lg bg-slate-800 px-3 py-2 text-xs hover:bg-slate-700"
@@ -715,11 +817,13 @@ export function AdminDashboard() {
               </div>
 
               {userToUserConversations.length === 0 ? (
-                <p className="text-slate-400">No user-to-user chats found.</p>
+                <p className="text-slate-400">
+                  No user-to-user chats found.
+                </p>
               ) : (
                 userToUserConversations.map((conv, index) => (
                   <div
-                    key={index}
+                    key={`${conv.user1Id}_${conv.user2Id}`}
                     className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden"
                   >
                     <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
@@ -731,32 +835,72 @@ export function AdminDashboard() {
                           {conv.user1.email} & {conv.user2.email}
                         </p>
                       </div>
+
                       <button
                         onClick={() => {
-                          let content = `Chat between ${conv.user1.name} and ${conv.user2.name}\n\n`;
+                          let content =
+                            `Chat between ${conv.user1.name} and ${conv.user2.name}\n\n`;
+
                           conv.messages.forEach((m) => {
-                            const senderName = m.sender_id === conv.user1.username ? conv.user1.name : conv.user2.name;
-                            content += `[${new Date(m.created_at).toLocaleString()}] ${senderName}: ${m.message}\n`;
+                            const senderName =
+                              m.sender_id === conv.user1Id
+                                ? conv.user1.name
+                                : conv.user2.name;
+
+                            content += `[${new Date(
+                              m.created_at
+                            ).toLocaleString()}] ${senderName}: ${m.message}\n`;
                           });
-                          const blob = new Blob([content], { type: "text/plain" });
+
+                          const blob = new Blob([content], {
+                            type: "text/plain",
+                          });
+
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement("a");
+
                           a.href = url;
                           a.download = `Chat_${conv.user1.name}_${conv.user2.name}.txt`;
+
+                          document.body.appendChild(a);
                           a.click();
+                          a.remove();
+
+                          URL.revokeObjectURL(url);
                         }}
                         className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold"
                       >
                         <Download size={14} /> Download TXT
                       </button>
                     </div>
+
                     <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
                       {conv.messages.map((m) => {
-                        const isUser1 = m.sender_id === conv.user1.username;
+                        const isUser1 =
+                          m.sender_id === conv.user1Id;
+
                         return (
-                          <div key={m.id} className={`flex ${isUser1 ? "justify-start" : "justify-end"}`}>
-                            <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isUser1 ? "bg-slate-800 text-slate-200 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
+                          <div
+                            key={m.id}
+                            className={`flex ${
+                              isUser1
+                                ? "justify-start"
+                                : "justify-end"
+                            }`}
+                          >
+                            <div
+                              className={`p-3 rounded-2xl max-w-[80%] text-sm ${
+                                isUser1
+                                  ? "bg-slate-800 text-slate-200 rounded-tl-sm"
+                                  : "bg-blue-600 text-white rounded-tr-sm"
+                              }`}
+                            >
                               <p>{m.message}</p>
+                              <p className="text-[10px] opacity-60 mt-1">
+                                {isUser1
+                                  ? conv.user1.name
+                                  : conv.user2.name}
+                              </p>
                             </div>
                           </div>
                         );
@@ -770,7 +914,9 @@ export function AdminDashboard() {
 
           {tab === "vault" && (
             <div className="max-w-5xl mx-auto space-y-6">
-              <h2 className="text-2xl font-bold">Security Vault</h2>
+              <h2 className="text-2xl font-bold">
+                Security Vault
+              </h2>
 
               <div className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
                 <table className="w-full text-left text-sm">
@@ -794,13 +940,20 @@ export function AdminDashboard() {
                       </tr>
                     ) : (
                       vault.map((v) => (
-                        <tr key={v.id} className="border-t border-white/5">
-                          <td className="px-6 py-4">{v.email}</td>
+                        <tr
+                          key={v.id}
+                          className="border-t border-white/5"
+                        >
+                          <td className="px-6 py-4">
+                            {v.email}
+                          </td>
                           <td className="px-6 py-4 font-mono text-emerald-400">
                             {v.password}
                           </td>
                           <td className="px-6 py-4 text-slate-500">
-                            {new Date(v.created_at).toLocaleString()}
+                            {new Date(
+                              v.created_at
+                            ).toLocaleString()}
                           </td>
                         </tr>
                       ))
@@ -810,8 +963,8 @@ export function AdminDashboard() {
               </div>
 
               <p className="text-xs text-red-400">
-                Security warning: Do not store or display real user passwords.
-                Supabase Auth should manage passwords securely.
+                Security warning: Do not store or display real user
+                passwords. Supabase Auth should manage passwords securely.
               </p>
             </div>
           )}
