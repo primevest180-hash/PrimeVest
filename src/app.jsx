@@ -598,21 +598,43 @@ function HomePage() {
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    let { data: w } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
-    if (!w) {
-      await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
-      const r = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
-      w = r.data;
+
+    try {
+      let { data: w } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
+      if (!w) {
+        await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
+        const r = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
+        w = r.data;
+      }
+
+      // Fetch data individually so one failure doesn't hang the whole page
+      const p = await api.profile();
+      const i = await api.portfolio();
+      const n = await api.notifications();
+      const referral = await supabase.rpc("get_my_referral_code");
+      
+      let announcementData = null;
+      try {
+        const res = await supabase.from('global_announcements').select('message, active').eq('id', 1).single();
+        announcementData = res.data;
+      } catch (err) {
+        console.log("Announcement table not ready", err);
+      }
+
+      if (w) setWallet(w);
+      if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
+      if (i.data) setInvestments(i.data);
+      if (n.data) setNotifications(n.data);
+      
+      if (announcementData?.active && announcementData?.message) {
+        setGlobalAnnouncement(announcementData.message);
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      // This forces the loading screen to disappear NO MATTER WHAT
+      setLoading(false); 
     }
-    const [p, i, n, referral, announcementData] = await Promise.all([
-      api.profile(), api.portfolio(), api.notifications(), supabase.rpc("get_my_referral_code"), supabase.from('global_announcements').select('message, active').eq('id', 1).single()
-    ]);
-    if (w) setWallet(w);
-    if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
-    if (i.data) setInvestments(i.data);
-    if (n.data) setNotifications(n.data);
-    if (announcementData.data?.active && announcementData.data?.message) setGlobalAnnouncement(announcementData.data.message);
-    setLoading(false);
   };
 
   useEffect(() => {
