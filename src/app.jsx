@@ -597,9 +597,13 @@ function HomePage() {
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     try {
+      // 1. Wallet
       let { data: w } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       if (!w) {
         await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
@@ -607,20 +611,24 @@ function HomePage() {
         w = r.data;
       }
 
-      // Fetch data individually so one failure doesn't hang the whole page
-      const p = await api.profile();
-      const i = await api.portfolio();
-      const n = await api.notifications();
-      const referral = await supabase.rpc("get_my_referral_code");
+      // 2. Profile & other data (Using Promise.all with fallbacks)
+      const [p, i, n, referral] = await Promise.all([
+        api.profile().catch(() => ({ data: null })),
+        api.portfolio().catch(() => ({ data: [] })),
+        api.notifications().catch(() => ({ data: [] })),
+        supabase.rpc("get_my_referral_code").catch(() => ({ data: null }))
+      ]);
       
+      // 3. Announcement
       let announcementData = null;
       try {
         const res = await supabase.from('global_announcements').select('message, active').eq('id', 1).single();
         announcementData = res.data;
       } catch (err) {
-        console.log("Announcement table not ready", err);
+        console.log("Announcement table not ready yet", err);
       }
 
+      // 4. Set State
       if (w) setWallet(w);
       if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
       if (i.data) setInvestments(i.data);
@@ -632,7 +640,7 @@ function HomePage() {
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
-      // This forces the loading screen to disappear NO MATTER WHAT
+      // 🚨 THIS IS THE MOST IMPORTANT LINE. It forces the loading screen to stop.
       setLoading(false); 
     }
   };
