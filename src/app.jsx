@@ -611,7 +611,7 @@ function HomePage() {
         w = r.data;
       }
 
-      // 2. Profile & other data (Fixed the .catch error)
+      // 2. Profile & other data (This is the fix)
       const p = await api.profile();
       const i = await api.portfolio();
       const n = await api.notifications();
