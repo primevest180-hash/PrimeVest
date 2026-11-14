@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite' // <--- ADD THIS LINE
 
 export default defineConfig({
   plugins: [
     react(),
-    // DELETE OR COMMENT OUT VitePWA HERE
+    tailwindcss(), // <--- ADD THIS LINE
   ],
 })
