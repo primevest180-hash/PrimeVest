@@ -461,7 +461,7 @@ function UsernameGuard({ children }) {
             if (username.length < 3) return alert("Min 3 chars");
             const r = await api.setUsername(username);
             if (r.error) return alert(r.error);
-            window.location.reload();
+            window.location.href = "/home"; 
           }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">Set Username</button>
         </div>
       </div>
@@ -846,6 +846,102 @@ function HomePage() {
   );
 }
 
+// ==========================================
+// ADMIN CHAT COMPONENT
+// ==========================================
+function AdminChat() {
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
+
+  useEffect(() => {
+    api.getAllUsers().then(({ data }) => setUsers(data || []));
+    
+    const channel = supabase.channel('admin-chat')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
+        if (payload.new.sender_id === selectedUser?.id || payload.new.receiver_id === ADMIN_UUID) {
+          setMessages(prev => [...prev, payload.new]);
+        }
+        if (payload.new.receiver_id === ADMIN_UUID && payload.new.sender_id !== selectedUser?.id) {
+           setUnreadCounts(prev => ({ ...prev, [payload.new.sender_id]: (prev[payload.new.sender_id] || 0) + 1 }));
+        }
+      }).subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [selectedUser]);
+
+  const loadMessages = async (userId) => {
+    setSelectedUser(users.find(u => u.id === userId));
+    await supabase.from('admin_messages').update({ read: true }).eq('sender_id', userId).eq('receiver_id', ADMIN_UUID).eq('read', false);
+    setUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
+
+    const { data } = await supabase.from('admin_messages')
+      .select('*')
+      .or(`and(sender_id.eq.${ADMIN_UUID},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${ADMIN_UUID})`)
+      .order('created_at', { ascending: true });
+    setMessages(data || []);
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedUser) return;
+
+    const msg = {
+      sender_id: ADMIN_UUID,
+      receiver_id: selectedUser.id,
+      message: newMessage,
+      read: false
+    };
+
+    await supabase.from('admin_messages').insert(msg);
+    setNewMessage("");
+  };
+
+  return (
+    <div className="flex h-screen bg-[#070D1A] text-white pt-16">
+      <div className="w-1/3 border-r border-white/10 overflow-y-auto">
+        <div className="p-4 border-b border-white/10 font-bold text-xl bg-[#0D1526]">Admin Messages</div>
+        {users.map(u => (
+          <button key={u.id} onClick={() => loadMessages(u.id)} className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 flex justify-between items-center ${selectedUser?.id === u.id ? 'bg-white/10' : ''}`}>
+            <div>
+              <p className="font-bold">@{u.username || u.name}</p>
+              <p className="text-xs text-slate-400">{u.email}</p>
+            </div>
+            {unreadCounts[u.id] > 0 && (
+              <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{unreadCounts[u.id]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="w-2/3 flex flex-col">
+        {selectedUser ? (
+          <>
+            <div className="p-4 border-b border-white/10 bg-[#0D1526] flex items-center gap-2">
+               <MessageSquare size={20} />
+               <h2 className="font-bold">Chatting with @{selectedUser.username || selectedUser.name}</h2>
+            </div>
+            <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
+              {messages.map((m, i) => (
+                <div key={i} className={`max-w-[70%] p-3 rounded-xl ${m.sender_id === ADMIN_UUID ? 'bg-blue-600 self-end' : 'bg-[#0D1526] self-start'}`}>
+                  {m.message}
+                </div>
+              ))}
+            </div>
+            <form onSubmit={sendMessage} className="p-4 border-t border-white/10 bg-[#0D1526] flex gap-2">
+              <input value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type a message..." className="flex-1 bg-[#070D1A] p-3 rounded-xl outline-none" />
+              <button type="submit" className="bg-blue-600 px-6 rounded-xl font-bold">Send</button>
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-slate-500">Select a user to start chatting</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -860,6 +956,7 @@ function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/av" element={<AdminDashboard />} />
+      <Route path="/admin-chat" element={<AdminChat />} /> {/* ADDED ROUTE */}
 
       <Route element={<ProtectedRoute />}>
         <Route element={<UsernameGuard><Outlet /></UsernameGuard>}>
