@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon, LogOut, X, ArrowLeft, CreditCard, LockKeyhole,
   Building2, Bitcoin, Timer, Zap, Crown, Lock as LockIcon, CheckCircle,
   RefreshCw, Ban, Download, User, Menu, Star, Sparkles, LineChart, Globe2, Gamepad2,
+  Megaphone, BookOpen
 } from "lucide-react";
 import Terms from "./terms";
 import {
@@ -589,6 +590,7 @@ function HomePage() {
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralStatus, setReferralStatus] = useState("");
   const [, setTick] = useState(0);
+  const [globalAnnouncement, setGlobalAnnouncement] = useState(null);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -599,12 +601,22 @@ function HomePage() {
       const r = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       w = r.data;
     }
-    const [p, i, n, referral] = await Promise.all([api.profile(), api.portfolio(), api.notifications(), supabase.rpc("get_my_referral_code")]);
+    const [p, i, n, referral, announcementData] = await Promise.all([
+      api.profile(), 
+      api.portfolio(), 
+      api.notifications(), 
+      supabase.rpc("get_my_referral_code"),
+      supabase.from('global_announcements').select('message, active').eq('id', 1).single()
+    ]);
+    
     if (w) setWallet(w);
     if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
-    if (referral.error) console.error("Referral code setup:", referral.error);
     if (i.data) setInvestments(i.data);
     if (n.data) setNotifications(n.data);
+    if (announcementData.data?.active && announcementData.data?.message) {
+      setGlobalAnnouncement(announcementData.data.message);
+    }
+    
     setLoading(false);
   };
 
@@ -704,6 +716,14 @@ function HomePage() {
     <div className={`min-h-screen pb-28 text-white ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
 
+      {globalAnnouncement && (
+        <div className="bg-amber-600 text-white text-center p-3 text-sm font-bold relative">
+          <div className="flex items-center justify-center gap-2 max-w-7xl mx-auto px-6">
+            <Megaphone size={18} /> {globalAnnouncement}
+          </div>
+        </div>
+      )}
+
       <header className={`sticky top-0 z-40 border-b backdrop-blur-xl ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/5 bg-[#070D1A]/95"}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <h1 className="text-xl font-bold">Prime<span className={isVip ? "text-amber-400" : "text-blue-400"}>Vest</span></h1>
@@ -798,15 +818,42 @@ function HomePage() {
           </div>
         </section>
 
+        <section className="mt-9 rounded-2xl border border-blue-500/20 bg-[#0D1526] p-6">
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-blue-400">
+            <BookOpen size={20} /> How to use PrimeVest
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <h4 className="font-bold text-white mb-2">1. How to Invest</h4>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Click on the <strong className="text-white">"Invest"</strong> icon in the bottom navigation. Choose a plan, enter the amount, and click "Invest Now". Your daily profit will be added to your wallet.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-bold text-white mb-2">2. How to Play Game</h4>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Click on the <strong className="text-white">"Game"</strong> icon (Wallet). Tap the golden circle to earn HC coins. Use your HC to upgrade your tap power or withdraw it as real cash!
+              </p>
+            </div>
+            <div>
+              <h4 className="font-bold text-white mb-2">3. Talk to Admin</h4>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Click the <strong className="text-white">"Support"</strong> icon below. Send a message directly to our admin team. We usually reply within a few minutes.
+              </p>
+            </div>
+          </div>
+        </section>
+
         <section className="mt-9">
           <h3 className="mb-5 text-lg font-semibold">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
             {[
               { href: "/scratch", icon: Gift, label: "Scratch", color: "text-blue-400" },
               { href: "#refer", icon: Users, label: "Refer", color: "text-amber-400", action: true },
               { href: "/mystery", icon: Zap, label: "Mystery", color: "text-purple-400" },
               { href: "/invest", icon: TrendingUp, label: "Invest", color: "text-emerald-400" },
               { href: "/hamster", icon: Wallet, label: "Game", color: "text-orange-400" },
+              { href: "/chat", icon: MessageSquare, label: "Support", color: "text-pink-400" },
             ].map(({ href, icon: Icon, label, color, action }) => (
               action ? (
                 <button key={label} onClick={() => { setReferralStatus(""); setReferralOpen(true); }} className="text-left rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-amber-500/40">
@@ -846,9 +893,6 @@ function HomePage() {
   );
 }
 
-// ==========================================
-// ADMIN CHAT COMPONENT
-// ==========================================
 function AdminChat() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
@@ -858,7 +902,6 @@ function AdminChat() {
 
   useEffect(() => {
     api.getAllUsers().then(({ data }) => setUsers(data || []));
-    
     const channel = supabase.channel('admin-chat')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         if (payload.new.sender_id === selectedUser?.id || payload.new.receiver_id === ADMIN_UUID) {
@@ -868,7 +911,6 @@ function AdminChat() {
            setUnreadCounts(prev => ({ ...prev, [payload.new.sender_id]: (prev[payload.new.sender_id] || 0) + 1 }));
         }
       }).subscribe();
-
     return () => supabase.removeChannel(channel);
   }, [selectedUser]);
 
@@ -876,7 +918,6 @@ function AdminChat() {
     setSelectedUser(users.find(u => u.id === userId));
     await supabase.from('admin_messages').update({ read: true }).eq('sender_id', userId).eq('receiver_id', ADMIN_UUID).eq('read', false);
     setUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
-
     const { data } = await supabase.from('admin_messages')
       .select('*')
       .or(`and(sender_id.eq.${ADMIN_UUID},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${ADMIN_UUID})`)
@@ -887,14 +928,7 @@ function AdminChat() {
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUser) return;
-
-    const msg = {
-      sender_id: ADMIN_UUID,
-      receiver_id: selectedUser.id,
-      message: newMessage,
-      read: false
-    };
-
+    const msg = { sender_id: ADMIN_UUID, receiver_id: selectedUser.id, message: newMessage, read: false };
     await supabase.from('admin_messages').insert(msg);
     setNewMessage("");
   };
@@ -909,9 +943,7 @@ function AdminChat() {
               <p className="font-bold">@{u.username || u.name}</p>
               <p className="text-xs text-slate-400">{u.email}</p>
             </div>
-            {unreadCounts[u.id] > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{unreadCounts[u.id]}</span>
-            )}
+            {unreadCounts[u.id] > 0 && (<span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{unreadCounts[u.id]}</span>)}
           </button>
         ))}
       </div>
@@ -924,9 +956,7 @@ function AdminChat() {
             </div>
             <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
               {messages.map((m, i) => (
-                <div key={i} className={`max-w-[70%] p-3 rounded-xl ${m.sender_id === ADMIN_UUID ? 'bg-blue-600 self-end' : 'bg-[#0D1526] self-start'}`}>
-                  {m.message}
-                </div>
+                <div key={i} className={`max-w-[70%] p-3 rounded-xl ${m.sender_id === ADMIN_UUID ? 'bg-blue-600 self-end' : 'bg-[#0D1526] self-start'}`}>{m.message}</div>
               ))}
             </div>
             <form onSubmit={sendMessage} className="p-4 border-t border-white/10 bg-[#0D1526] flex gap-2">
@@ -956,7 +986,7 @@ function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/av" element={<AdminDashboard />} />
-      <Route path="/admin-chat" element={<AdminChat />} /> {/* ADDED ROUTE */}
+      <Route path="/admin-chat" element={<AdminChat />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<UsernameGuard><Outlet /></UsernameGuard>}>
