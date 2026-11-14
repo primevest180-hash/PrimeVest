@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Lock as LockIcon, Download, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone
+  Lock as LockIcon, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus
 } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
@@ -18,10 +18,10 @@ export function AdminDashboard() {
 
   const [withdrawals, setWithdrawals] = useState([]);
   const [users, setUsers] = useState([]);
-  const [vault, setVault] = useState([]);
   
   // Chat states
   const [allMessages, setAllMessages] = useState([]);
+  const [privateMessages, setPrivateMessages] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [newMessage, setNewMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -29,8 +29,6 @@ export function AdminDashboard() {
   // Announcement states
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(false);
-  const [directUser, setDirectUser] = useState("");
-  const [directMsg, setDirectMsg] = useState("");
 
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [processing, setProcessing] = useState(null);
@@ -41,25 +39,21 @@ export function AdminDashboard() {
   async function loadData() {
     setDataLoading(true);
     try {
-      const [w, u, v, s, messageResult, announcementResult] = await Promise.all([
+      const [w, u, s, adminMsg, privateMsg, announcementResult] = await Promise.all([
         api.getAdminWithdrawals(),
         api.getAllUsers(),
-        api.getAdminVault(),
         api.getAdminStats(),
         supabase.from("admin_messages").select("*").order("created_at", { ascending: true }),
+        supabase.from("private_messages").select("*").order("created_at", { ascending: true }),
         supabase.from("global_announcements").select("*").eq("id", 1).single()
       ]);
 
-      if (messageResult.error) setError("Messages error: " + messageResult.error.message);
-      else if (u?.error) setError("User profiles error: " + u.error.message);
-      else setError("");
-
       setWithdrawals(w?.data || []);
       setUsers(u?.data || []);
-      setVault(v?.data || []);
-      setAllMessages(messageResult.data || []);
+      setAllMessages(adminMsg.data || []);
+      setPrivateMessages(privateMsg.data || []);
 
-      const unread = (messageResult.data || []).filter(m => m.receiver_id === ADMIN_UUID && !m.read).length;
+      const unread = (adminMsg.data || []).filter(m => m.receiver_id === ADMIN_UUID && !m.read).length;
       setUnreadCount(unread);
 
       if (announcementResult.data) {
@@ -75,14 +69,35 @@ export function AdminDashboard() {
     }
   }
 
+  // 🚨 REALTIME LISTENERS
   useEffect(() => {
     if (!authed) return;
-    const channel = supabase.channel('admin-messages-live')
+
+    // Listen for new users registering
+    const profileChannel = supabase.channel('admin-profiles')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, (payload) => {
+        setUsers(prev => [payload.new, ...prev]);
+        setStats(prev => ({ ...prev, usersCount: prev.usersCount + 1 }));
+      }).subscribe();
+
+    // Listen for new admin messages
+    const adminMsgChannel = supabase.channel('admin-messages-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         setAllMessages(prev => [...prev, payload.new]);
         if (payload.new.receiver_id === ADMIN_UUID && !payload.new.read) setUnreadCount(prev => prev + 1);
       }).subscribe();
-    return () => supabase.removeChannel(channel);
+
+    // Listen for new user-to-user messages
+    const privateMsgChannel = supabase.channel('private-messages-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
+        setPrivateMessages(prev => [...prev, payload.new]);
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(profileChannel);
+      supabase.removeChannel(adminMsgChannel);
+      supabase.removeChannel(privateMsgChannel);
+    };
   }, [authed]);
 
   async function login(e) {
@@ -125,17 +140,14 @@ export function AdminDashboard() {
     } catch (err) { alert("User update failed: " + err.message); }
   }
 
-  // 🚨 FIX: Sends message and updates UI instantly
   async function sendAdminMessage(e) {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUser) return;
     const msg = { sender_id: ADMIN_UUID, receiver_id: selectedUser.id, message: newMessage.trim(), read: false };
     
     const { data, error } = await supabase.from('admin_messages').insert(msg).select().single();
-    
-    if (error) {
-      alert("Failed to send: " + error.message);
-    } else {
+    if (error) alert("Failed to send: " + error.message);
+    else {
       setAllMessages(prev => [...prev, data]);
       setNewMessage("");
     }
@@ -151,20 +163,6 @@ export function AdminDashboard() {
   async function saveGlobalAnnouncement() {
     await supabase.from('global_announcements').update({ message: announcementText, active: announcementActive }).eq('id', 1);
     alert("Global announcement updated!");
-  }
-
-  async function sendDirectAnnouncement(e) {
-    e.preventDefault();
-    if (!directUser || !directMsg.trim()) return alert("Select a user and type a message.");
-    const msg = { sender_id: ADMIN_UUID, receiver_id: directUser, message: directMsg.trim(), read: false };
-    const { error } = await supabase.from('admin_messages').insert(msg);
-    if (error) alert("Failed to send: " + error.message);
-    else {
-      alert("Direct message sent!");
-      setDirectMsg("");
-      setDirectUser("");
-      await loadData();
-    }
   }
 
   if (loading) return <div className="min-h-screen bg-[#070D1A] text-white flex items-center justify-center">Loading...</div>;
@@ -193,13 +191,12 @@ export function AdminDashboard() {
     return { id: userId, name: "User", email: "Profile loading..." };
   };
 
-  // 🚨 FIX: Filter messages for selected user
   const currentChatMessages = allMessages.filter(
     (m) => (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) || (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
   );
 
-  // 🚨 FIX: User-to-User logic
-  const userToUserMessages = allMessages.filter((m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id));
+  // Filter private messages for User-to-User tab
+  const userToUserMessages = privateMessages.filter((m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id));
   const uniqueConversations = {};
   userToUserMessages.forEach((m) => {
     const [user1Id, user2Id] = [m.sender_id, m.receiver_id].sort();
@@ -218,13 +215,16 @@ export function AdminDashboard() {
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "dashboard" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Dashboard</button>
           <button onClick={() => setTab("users")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "users" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> Manage Users</button>
+          
+          {/* Refer Clicks Tab (Simulating by showing users with last_refer_click) */}
+          <button onClick={() => setTab("referrals")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "referrals" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><UserPlus size={18} /> Refer Clicks</button>
+          
           <button onClick={() => setTab("announcements")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "announcements" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Megaphone size={18} /> Announcements</button>
           <button onClick={() => setTab("messages")} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "messages" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
             <div className="flex items-center gap-3"><MessageSquare size={18} /> Admin Inbox</div>
             {unreadCount > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>}
           </button>
           <button onClick={() => setTab("user_chats")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "user_chats" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> User-to-User</button>
-          <button onClick={() => setTab("vault")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "vault" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><LockIcon size={18} /> Security Vault</button>
         </nav>
         <div className="p-4 border-t border-white/5"><a href="/home" className="flex items-center gap-3 px-4 py-3 text-sm text-slate-400 hover:text-white"><ArrowLeft size={18} /> Back to App</a></div>
       </aside>
@@ -235,10 +235,10 @@ export function AdminDashboard() {
           <select onChange={(e) => setTab(e.target.value)} value={tab} className="bg-slate-900 text-white text-sm rounded-lg px-2 py-1 outline-none">
             <option value="dashboard">Dashboard</option>
             <option value="users">Users</option>
+            <option value="referrals">Referrals</option>
             <option value="announcements">Announcements</option>
             <option value="messages">Inbox ({unreadCount})</option>
             <option value="user_chats">User Chats</option>
-            <option value="vault">Vault</option>
           </select>
         </div>
 
@@ -257,38 +257,37 @@ export function AdminDashboard() {
             </div>
           )}
 
+          {tab === "referrals" && (
+            <div className="max-w-5xl mx-auto space-y-6">
+              <h2 className="text-2xl font-bold">Refer Button Clicks</h2>
+              <div className="space-y-4">
+                {users.filter(u => u.last_refer_click).map((u) => (
+                  <div key={u.id} className="rounded-2xl border border-white/5 bg-[#0D1526] p-5 flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-lg">{u.username ? `@${u.username}` : u.name || "Unnamed"}</p>
+                      <p className="text-sm text-slate-400">{u.email}</p>
+                    </div>
+                    <p className="text-xs text-amber-400 font-bold">Clicked: {new Date(u.last_refer_click).toLocaleString()}</p>
+                  </div>
+                ))}
+                {users.filter(u => u.last_refer_click).length === 0 && <p className="text-slate-400">No refer clicks yet.</p>}
+              </div>
+            </div>
+          )}
+
           {tab === "announcements" && (
             <div className="max-w-4xl mx-auto space-y-8">
-              <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Announcements & Direct Messages</h2>
-              
+              <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Announcements</h2>
               <div className="rounded-2xl border border-amber-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-amber-500/5">
                 <h3 className="text-lg font-bold text-amber-400">Global Announcement (All Users)</h3>
-                <p className="text-sm text-slate-400">This message will appear in a gold banner at the top of every user's dashboard until you turn it off.</p>
                 <textarea value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} placeholder="Type your global message here..." className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500" />
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
                     <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" /> 
-                    Activate Banner (Visible to all)
+                    Activate Banner
                   </label>
-                  <button onClick={saveGlobalAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Publish Banner</button>
+                  <button onClick={saveGlobalAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Publish</button>
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-blue-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-blue-500/5">
-                <h3 className="text-lg font-bold text-blue-400">Direct Message (Specific User)</h3>
-                <p className="text-sm text-slate-400">Send a private message directly to a user's Admin Inbox.</p>
-                <form onSubmit={sendDirectAnnouncement} className="flex flex-col gap-4">
-                  <select value={directUser} onChange={(e) => setDirectUser(e.target.value)} className="w-full bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500">
-                    <option value="">-- Select a user --</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>{u.username ? `@${u.username}` : u.name || u.email} ({u.email})</option>
-                    ))}
-                  </select>
-                  <textarea value={directMsg} onChange={(e) => setDirectMsg(e.target.value)} placeholder="Type your direct message here..." className="w-full h-24 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500" />
-                  <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2">
-                    <Send size={18} /> Send Direct Message
-                  </button>
-                </form>
               </div>
             </div>
           )}
