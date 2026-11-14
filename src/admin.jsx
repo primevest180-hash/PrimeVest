@@ -48,8 +48,8 @@ export function AdminDashboard() {
         supabase.from("global_announcements").select("*").eq("id", 1).single()
       ]);
 
-      if (messageResult.error) setError("Messages could not be loaded: " + messageResult.error.message);
-      else if (u?.error) setError("User profiles could not be loaded: " + u.error.message);
+      if (messageResult.error) setError("Messages error: " + messageResult.error.message);
+      else if (u?.error) setError("User profiles error: " + u.error.message);
       else setError("");
 
       setWithdrawals(w?.data || []);
@@ -67,7 +67,7 @@ export function AdminDashboard() {
 
       setStats(s || { usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
     } catch (err) {
-      setError(err.message || "Failed to load admin data.");
+      setError(err.message || "Failed to load data.");
     } finally {
       setDataLoading(false);
     }
@@ -78,9 +78,7 @@ export function AdminDashboard() {
     const channel = supabase.channel('admin-messages-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         setAllMessages(prev => [...prev, payload.new]);
-        if (payload.new.receiver_id === ADMIN_UUID && !payload.new.read) {
-          setUnreadCount(prev => prev + 1);
-        }
+        if (payload.new.receiver_id === ADMIN_UUID && !payload.new.read) setUnreadCount(prev => prev + 1);
       }).subscribe();
     return () => supabase.removeChannel(channel);
   }, [authed]);
@@ -93,8 +91,6 @@ export function AdminDashboard() {
     setAuthed(true);
     await loadData();
   }
-
-  // ... (approve, reject, freeze functions remain unchanged) ...
 
   async function sendAdminMessage(e) {
     e.preventDefault();
@@ -118,20 +114,6 @@ export function AdminDashboard() {
   async function saveAnnouncement() {
     await supabase.from('global_announcements').update({ message: announcementText, active: announcementActive }).eq('id', 1);
     alert("Announcement updated!");
-  }
-
-  function downloadChat(messagesToDownload, name1, name2) {
-    if (!messagesToDownload.length) return alert("No messages.");
-    let content = `Chat History: ${name1} & ${name2}\n\n`;
-    messagesToDownload.forEach((m) => {
-      const senderName = ADMIN_UUIDS.includes(m.sender_id) ? "Admin" : (m.sender_id === name1 ? name1 : name2);
-      content += `[${new Date(m.created_at).toLocaleString()}] ${senderName}: ${m.message}\n`;
-    });
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `Chat_${name1}_${name2}.txt`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
   if (loading) return <div className="min-h-screen bg-[#070D1A] text-white flex items-center justify-center">Loading...</div>;
@@ -160,12 +142,10 @@ export function AdminDashboard() {
     return { id: userId, name: "User", email: "Profile loading..." };
   };
 
-  // 🚨 FIX: Filter messages for selected user correctly
   const currentChatMessages = allMessages.filter(
     (m) => (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) || (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
   );
 
-  // 🚨 FIX: User-to-User logic restored
   const userToUserMessages = allMessages.filter((m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id));
   const uniqueConversations = {};
   userToUserMessages.forEach((m) => {
@@ -185,10 +165,7 @@ export function AdminDashboard() {
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "dashboard" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Dashboard</button>
           <button onClick={() => setTab("users")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "users" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> Manage Users</button>
-          
-          {/* 🚨 ANNOUNCEMENT TAB */}
           <button onClick={() => setTab("announcements")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "announcements" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Megaphone size={18} /> Announcements</button>
-          
           <button onClick={() => setTab("messages")} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "messages" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
             <div className="flex items-center gap-3"><MessageSquare size={18} /> Admin Inbox</div>
             {unreadCount > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>}
@@ -206,17 +183,17 @@ export function AdminDashboard() {
             <option value="dashboard">Dashboard</option>
             <option value="users">Users</option>
             <option value="announcements">Announcements</option>
-            <option value="messages">Admin Inbox ({unreadCount})</option>
-            <option value="user_chats">User-to-User</option>
+            <option value="messages">Inbox ({unreadCount})</option>
+            <option value="user_chats">User Chats</option>
             <option value="vault">Vault</option>
           </select>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 md:p-10">
-          {/* ... (Error and DataLoading indicators remain) ... */}
+          {error && <div className="max-w-5xl mx-auto mb-5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+          {dataLoading && <p className="text-center text-xs text-slate-500 mb-4">Refreshing...</p>}
 
           {tab === "dashboard" && (
-            // ... (Dashboard UI remains unchanged) ...
             <div className="max-w-5xl mx-auto space-y-8">
               <h2 className="text-2xl font-bold">Overview</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -227,22 +204,15 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {/* 🚨 ANNOUNCEMENT EDITOR */}
           {tab === "announcements" && (
             <div className="max-w-2xl mx-auto space-y-6">
               <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Global Announcement</h2>
               <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-6 space-y-4">
                 <p className="text-sm text-slate-400">This message will appear at the top of every user's dashboard.</p>
-                <textarea 
-                  value={announcementText} 
-                  onChange={(e) => setAnnouncementText(e.target.value)} 
-                  placeholder="Type your message here..." 
-                  className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500"
-                />
+                <textarea value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} placeholder="Type your message here..." className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500" />
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-                    <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" />
-                    Show to all users
+                    <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" /> Show to all users
                   </label>
                   <button onClick={saveAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Save</button>
                 </div>
@@ -262,7 +232,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="flex items-center gap-3">
                       <button onClick={() => openChat(u)} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold hover:bg-blue-500"><MessageSquare size={16} /> Message</button>
-                      <button onClick={() => freeze(u)} className={`rounded-xl px-6 py-2 text-sm font-bold ${u.account_status === "frozen" ? "bg-emerald-600" : "bg-red-600"}`}>{u.account_status === "frozen" ? "Unfreeze" : "Freeze"}</button>
+                      <button className={`rounded-xl px-6 py-2 text-sm font-bold bg-red-600`}>Freeze</button>
                     </div>
                   </div>
                 ))}
@@ -273,7 +243,9 @@ export function AdminDashboard() {
           {tab === "messages" && (
             <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 h-[75vh]">
               <div className="w-full md:w-1/3 border border-white/10 rounded-2xl bg-[#0D1526] overflow-y-auto">
-                <div className="p-4 border-b border-white/10 font-bold text-lg bg-[#0D1526] sticky top-0">Users</div>
+                <div className="p-4 border-b border-white/10 font-bold text-lg bg-[#0D1526] sticky top-0 flex justify-between items-center">
+                  Users <button onClick={loadData} className="text-xs bg-slate-800 p-2 rounded-lg hover:bg-slate-700"><RefreshCw size={14} /></button>
+                </div>
                 {users.map((u) => (
                   <button key={u.id} onClick={() => openChat(u)} className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 flex justify-between items-center ${selectedUser?.id === u.id ? 'bg-white/10' : ''}`}>
                     <div>
@@ -288,7 +260,6 @@ export function AdminDashboard() {
                   <>
                     <div className="p-4 border-b border-white/10 bg-[#0D1526] rounded-t-2xl flex justify-between">
                       <h2 className="font-bold text-lg text-amber-400">@{selectedUser.username || selectedUser.name}</h2>
-                      <button onClick={() => downloadChat(currentChatMessages, selectedUser.name, "Admin")} className="bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Download size={14} /> Download</button>
                     </div>
                     <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
                       {currentChatMessages.map((m, i) => (
@@ -306,7 +277,6 @@ export function AdminDashboard() {
             </div>
           )}
 
-          {/* 🚨 USER TO USER CHATS RESTORED */}
           {tab === "user_chats" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div className="flex items-center justify-between">
@@ -320,10 +290,27 @@ export function AdminDashboard() {
                   <div key={`${conv.user1Id}_${conv.user2Id}`} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
                     <div className="bg-white/5 p-4 flex justify-between items-center border-b border-white/10">
                       <h3 className="font-bold text-lg text-amber-400">{conv.user1.name} ↔ {conv.user2.name}</h3>
-                      <button onClick={() => downloadChat(conv.messages, conv.user1.name, conv.user2.name)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold"><Download size={14} /> Download TXT</button>
                     </div>
                     <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
                       {conv.messages.map((m) => {
                         const isUser1 = m.sender_id === conv.user1Id;
                         return (
-                          <div key={m.id} className={`flex ${isUser1 ? "justify-start"
+                          <div key={m.id} className={`flex ${isUser1 ? "justify-start" : "justify-end"}`}>
+                            <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isUser1 ? "bg-slate-800 text-slate-200 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
+                              <p>{m.message}</p>
+                              <p className="text-[10px] opacity-60 mt-1">{isUser1 ? conv.user1.name : conv.user2.name}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
