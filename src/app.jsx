@@ -590,7 +590,10 @@ function HomePage() {
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralStatus, setReferralStatus] = useState("");
   const [, setTick] = useState(0);
+  
+  // 🚨 Gold Announcement State
   const [globalAnnouncement, setGlobalAnnouncement] = useState(null);
+  const [showAnnouncement, setShowAnnouncement] = useState(true);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -654,7 +657,18 @@ function HomePage() {
   return (
     <div className={`min-h-screen pb-28 text-white ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
-      {globalAnnouncement && (<div className="bg-amber-600 text-white text-center p-3 text-sm font-bold relative"><div className="flex items-center justify-center gap-2 max-w-7xl mx-auto px-6"><Megaphone size={18} /> {globalAnnouncement}</div></div>)}
+      
+      {/* 🚨 GOLD ANNOUNCEMENT BANNER */}
+      {globalAnnouncement && showAnnouncement && (
+        <div className="bg-amber-500 text-black text-center p-3 text-sm font-bold relative flex items-center justify-between">
+          <div className="flex items-center justify-center gap-2 max-w-7xl mx-auto px-6">
+            <Megaphone size={18} /> {globalAnnouncement}
+          </div>
+          <button onClick={() => setShowAnnouncement(false)} className="absolute right-4 p-1 hover:bg-black/10 rounded-full">
+            <X size={18} />
+          </button>
+        </div>
+      )}
 
       <header className={`sticky top-0 z-40 border-b backdrop-blur-xl ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/5 bg-[#070D1A]/95"}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">

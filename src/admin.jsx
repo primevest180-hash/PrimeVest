@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Lock as LockIcon, Download, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone
+  Lock as LockIcon, Download, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus
 } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
@@ -29,6 +29,8 @@ export function AdminDashboard() {
   // Announcement states
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(false);
+  const [directUser, setDirectUser] = useState("");
+  const [directMsg, setDirectMsg] = useState("");
 
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [processing, setProcessing] = useState(null);
@@ -92,6 +94,37 @@ export function AdminDashboard() {
     await loadData();
   }
 
+  async function approve(w) {
+    if (!confirm(`Approve ₦${Number(w.amount).toLocaleString()}?`)) return;
+    setProcessing(w.id);
+    try {
+      const result = await api.approveWithdrawal(w.id, w.user_id, w.amount);
+      if (result?.error) alert("Approval failed: " + result.error.message);
+      else { alert("Withdrawal approved."); await loadData(); }
+    } catch (err) { alert("Approval failed: " + err.message); } 
+    finally { setProcessing(null); }
+  }
+
+  async function reject(w) {
+    if (!confirm(`Reject ₦${Number(w.amount).toLocaleString()}?`)) return;
+    setProcessing(w.id);
+    try {
+      const result = await api.rejectWithdrawal(w.id, w.user_id, w.amount);
+      if (result?.error) alert("Rejection failed: " + result.error.message);
+      else { alert("Withdrawal rejected."); await loadData(); }
+    } catch (err) { alert("Rejection failed: " + err.message); } 
+    finally { setProcessing(null); }
+  }
+
+  async function freeze(u) {
+    if (!confirm(`Toggle freeze for ${u.name || u.email || "this user"}?`)) return;
+    try {
+      const result = await api.toggleUserFreeze(u.id, u.account_status);
+      if (result?.error) alert("User update failed: " + result.error.message);
+      else await loadData();
+    } catch (err) { alert("User update failed: " + err.message); }
+  }
+
   async function sendAdminMessage(e) {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUser) return;
@@ -111,9 +144,24 @@ export function AdminDashboard() {
     await loadData();
   }
 
-  async function saveAnnouncement() {
+  // 🚨 ANNOUNCEMENT FUNCTIONS
+  async function saveGlobalAnnouncement() {
     await supabase.from('global_announcements').update({ message: announcementText, active: announcementActive }).eq('id', 1);
-    alert("Announcement updated!");
+    alert("Global announcement updated!");
+  }
+
+  async function sendDirectAnnouncement(e) {
+    e.preventDefault();
+    if (!directUser || !directMsg.trim()) return alert("Select a user and type a message.");
+    const msg = { sender_id: ADMIN_UUID, receiver_id: directUser, message: directMsg.trim(), read: false };
+    const { error } = await supabase.from('admin_messages').insert(msg);
+    if (error) alert("Failed to send: " + error.message);
+    else {
+      alert("Direct message sent!");
+      setDirectMsg("");
+      setDirectUser("");
+      await loadData();
+    }
   }
 
   if (loading) return <div className="min-h-screen bg-[#070D1A] text-white flex items-center justify-center">Loading...</div>;
@@ -204,18 +252,55 @@ export function AdminDashboard() {
             </div>
           )}
 
+          {/* 🚨 NEW ANNOUNCEMENTS TAB */}
           {tab === "announcements" && (
-            <div className="max-w-2xl mx-auto space-y-6">
-              <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Global Announcement</h2>
-              <div className="rounded-2xl border border-white/10 bg-[#0D1526] p-6 space-y-4">
-                <p className="text-sm text-slate-400">This message will appear at the top of every user's dashboard.</p>
-                <textarea value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} placeholder="Type your message here..." className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500" />
+            <div className="max-w-4xl mx-auto space-y-8">
+              <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Announcements & Direct Messages</h2>
+              
+              {/* Global Announcement */}
+              <div className="rounded-2xl border border-amber-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-amber-500/5">
+                <h3 className="text-lg font-bold text-amber-400">Global Announcement (All Users)</h3>
+                <p className="text-sm text-slate-400">This message will appear in a gold banner at the top of every user's dashboard until you turn it off.</p>
+                <textarea 
+                  value={announcementText} 
+                  onChange={(e) => setAnnouncementText(e.target.value)} 
+                  placeholder="Type your global message here..." 
+                  className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500"
+                />
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-                    <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" /> Show to all users
+                    <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" /> 
+                    Activate Banner (Visible to all)
                   </label>
-                  <button onClick={saveAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Save</button>
+                  <button onClick={saveGlobalAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Publish Banner</button>
                 </div>
+              </div>
+
+              {/* Direct Message */}
+              <div className="rounded-2xl border border-blue-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-blue-500/5">
+                <h3 className="text-lg font-bold text-blue-400">Direct Message (Specific User)</h3>
+                <p className="text-sm text-slate-400">Send a private message directly to a user's Admin Inbox.</p>
+                <form onSubmit={sendDirectAnnouncement} className="flex flex-col gap-4">
+                  <select 
+                    value={directUser} 
+                    onChange={(e) => setDirectUser(e.target.value)} 
+                    className="w-full bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500"
+                  >
+                    <option value="">-- Select a user --</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.username ? `@${u.username}` : u.name || u.email} ({u.email})</option>
+                    ))}
+                  </select>
+                  <textarea 
+                    value={directMsg} 
+                    onChange={(e) => setDirectMsg(e.target.value)} 
+                    placeholder="Type your direct message here..." 
+                    className="w-full h-24 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500"
+                  />
+                  <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                    <Send size={18} /> Send Direct Message
+                  </button>
+                </form>
               </div>
             </div>
           )}
@@ -232,7 +317,7 @@ export function AdminDashboard() {
                     </div>
                     <div className="flex items-center gap-3">
                       <button onClick={() => openChat(u)} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold hover:bg-blue-500"><MessageSquare size={16} /> Message</button>
-                      <button className={`rounded-xl px-6 py-2 text-sm font-bold bg-red-600`}>Freeze</button>
+                      <button onClick={() => freeze(u)} className={`rounded-xl px-6 py-2 text-sm font-bold ${u.account_status === "frozen" ? "bg-emerald-600" : "bg-red-600"}`}>{u.account_status === "frozen" ? "Unfreeze" : "Freeze"}</button>
                     </div>
                   </div>
                 ))}
