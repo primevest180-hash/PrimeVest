@@ -94,25 +94,53 @@ export function AdminDashboard() {
     await loadData();
   }
 
+  async function approve(w) {
+    if (!confirm(`Approve ₦${Number(w.amount).toLocaleString()}?`)) return;
+    setProcessing(w.id);
+    try {
+      const result = await api.approveWithdrawal(w.id, w.user_id, w.amount);
+      if (result?.error) alert("Approval failed: " + result.error.message);
+      else { alert("Withdrawal approved."); await loadData(); }
+    } catch (err) { alert("Approval failed: " + err.message); } 
+    finally { setProcessing(null); }
+  }
+
+  async function reject(w) {
+    if (!confirm(`Reject ₦${Number(w.amount).toLocaleString()}?`)) return;
+    setProcessing(w.id);
+    try {
+      const result = await api.rejectWithdrawal(w.id, w.user_id, w.amount);
+      if (result?.error) alert("Rejection failed: " + result.error.message);
+      else { alert("Withdrawal rejected."); await loadData(); }
+    } catch (err) { alert("Rejection failed: " + err.message); } 
+    finally { setProcessing(null); }
+  }
+
+  async function freeze(u) {
+    if (!confirm(`Toggle freeze for ${u.name || u.email || "this user"}?`)) return;
+    try {
+      const result = await api.toggleUserFreeze(u.id, u.account_status);
+      if (result?.error) alert("User update failed: " + result.error.message);
+      else await loadData();
+    } catch (err) { alert("User update failed: " + err.message); }
+  }
+
   // 🚨 FIX: Sends message and updates UI instantly
   async function sendAdminMessage(e) {
     e.preventDefault();
     if (!newMessage.trim() || !selectedUser) return;
     const msg = { sender_id: ADMIN_UUID, receiver_id: selectedUser.id, message: newMessage.trim(), read: false };
     
-    // Insert into DB
     const { data, error } = await supabase.from('admin_messages').insert(msg).select().single();
     
     if (error) {
       alert("Failed to send: " + error.message);
     } else {
-      // Instantly update UI
       setAllMessages(prev => [...prev, data]);
       setNewMessage("");
     }
   }
 
-  // 🚨 FIX: Loads messages and marks them read
   async function openChat(user) {
     setSelectedUser(user);
     setTab("messages");
@@ -165,10 +193,12 @@ export function AdminDashboard() {
     return { id: userId, name: "User", email: "Profile loading..." };
   };
 
+  // 🚨 FIX: Filter messages for selected user
   const currentChatMessages = allMessages.filter(
     (m) => (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) || (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
   );
 
+  // 🚨 FIX: User-to-User logic
   const userToUserMessages = allMessages.filter((m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id));
   const uniqueConversations = {};
   userToUserMessages.forEach((m) => {
