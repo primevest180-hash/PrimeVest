@@ -87,7 +87,6 @@ export function HamsterGame() {
     );
   }
 
-  // Safe number conversions to prevent crashes
   const energy = Number(state.energy) || 0;
   const maxEnergy = Number(state.max_energy) || 1500;
   const coins = Number(state.coins) || 0;
@@ -113,10 +112,11 @@ export function HamsterGame() {
     document.getElementById(`hamster-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // 🚨 FIX: Changed p_count to 20 to drain 20 energy per tap
   async function tapHamster() {
     if (busy || isLocked || energy <= 0) return;
     setTapEffect(v => v + 1);
-    await run("hamster_tap", { p_count: 5 });
+    await run("hamster_tap", { p_count: 20 });
   }
 
   return (
@@ -193,7 +193,8 @@ export function HamsterGame() {
             <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
           </button>
           <div className="flex justify-center gap-2">
-            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / tap</span>
+            {/* 🚨 FIX: Displaying the -20 energy per tap */}
+            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / tap (-20 Energy)</span>
             {turboActive && <span className="rounded-full bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200"><Flame size={13} className="inline" /> TURBO</span>}
           </div>
         </section>

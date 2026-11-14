@@ -6,7 +6,8 @@ import {
   Users,
   Wallet,
   MessageSquare,
-  Send
+  Send,
+  RefreshCw
 } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
@@ -26,8 +27,8 @@ export function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [vault, setVault] = useState([]);
   
-  // Chat state
-  const [adminMessages, setAdminMessages] = useState([]);
+  // Chat states
+  const [allMessages, setAllMessages] = useState([]); // Raw messages from DB
   const [selectedUser, setSelectedUser] = useState(null);
   const [newMessage, setNewMessage] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -73,7 +74,7 @@ export function AdminDashboard() {
       setWithdrawals(w?.data || []);
       setUsers(u?.data || []);
       setVault(v?.data || []);
-      setAdminMessages(messageResult.data || []);
+      setAllMessages(messageResult.data || []);
 
       // Calculate unread
       const unread = (messageResult.data || []).filter(
@@ -102,21 +103,16 @@ export function AdminDashboard() {
 
     const channel = supabase.channel('admin-messages-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
-        setAdminMessages(prev => [...prev, payload.new]);
+        setAllMessages(prev => [...prev, payload.new]);
         
         if (payload.new.receiver_id === ADMIN_UUID && !payload.new.read) {
           setUnreadCount(prev => prev + 1);
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'admin_messages' }, (payload) => {
-         setAdminMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
-         const unread = adminMessages.filter(m => m.receiver_id === ADMIN_UUID && !m.read).length;
-         setUnreadCount(unread);
-      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [authed, adminMessages]);
+  }, [authed]);
 
   async function login(e) {
     e.preventDefault();
@@ -144,7 +140,6 @@ export function AdminDashboard() {
   async function approve(w) {
     if (!confirm(`Approve ₦${Number(w.amount).toLocaleString()}?`)) return;
     setProcessing(w.id);
-
     try {
       const result = await api.approveWithdrawal(w.id, w.user_id, w.amount);
       if (result?.error) alert("Approval failed: " + result.error.message);
@@ -156,7 +151,6 @@ export function AdminDashboard() {
   async function reject(w) {
     if (!confirm(`Reject ₦${Number(w.amount).toLocaleString()}?`)) return;
     setProcessing(w.id);
-
     try {
       const result = await api.rejectWithdrawal(w.id, w.user_id, w.amount);
       if (result?.error) alert("Rejection failed: " + result.error.message);
@@ -167,7 +161,6 @@ export function AdminDashboard() {
 
   async function freeze(u) {
     if (!confirm(`Toggle freeze for ${u.name || u.email || "this user"}?`)) return;
-
     try {
       const result = await api.toggleUserFreeze(u.id, u.account_status);
       if (result?.error) alert("User update failed: " + result.error.message);
@@ -186,10 +179,12 @@ export function AdminDashboard() {
       read: false
     };
 
-    const { error } = await supabase.from('admin_messages').insert(msg);
+    const { data, error } = await supabase.from('admin_messages').insert(msg).select().single();
+    
     if (error) {
       alert("Failed to send: " + error.message);
     } else {
+      setAllMessages(prev => [...prev, data]);
       setNewMessage("");
     }
   }
@@ -198,14 +193,34 @@ export function AdminDashboard() {
     setSelectedUser(user);
     setTab("messages");
     
-    // Mark messages as read
     await supabase.from('admin_messages')
       .update({ read: true })
       .eq('sender_id', user.id)
       .eq('receiver_id', ADMIN_UUID)
       .eq('read', false);
     
-    setUnreadCount(prev => Math.max(0, prev - adminMessages.filter(m => m.sender_id === user.id && !m.read).length));
+    setUnreadCount(prev => Math.max(0, prev - allMessages.filter(m => m.sender_id === user.id && !m.read).length));
+    await loadData(); // Refresh to mark as read in UI
+  }
+
+  function downloadChat(messagesToDownload, name1, name2) {
+    if (!messagesToDownload.length) return alert("No messages to download.");
+    
+    let content = `Chat History: ${name1} & ${name2}\n\n`;
+    messagesToDownload.forEach((m) => {
+      const senderName = ADMIN_UUIDS.includes(m.sender_id) ? "Admin" : (m.sender_id === name1 ? name1 : name2);
+      content += `[${new Date(m.created_at).toLocaleString()}] ${senderName}: ${m.message}\n`;
+    });
+
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Chat_${name1}_${name2}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) {
@@ -240,12 +255,52 @@ export function AdminDashboard() {
     );
   }
 
-  // Messages for selected user
-  const currentChatMessages = adminMessages.filter(
+  // Helper to get user details
+  const getUserDetails = (userId) => {
+    if (ADMIN_UUIDS.includes(userId)) {
+      return { id: userId, name: "Support Admin", email: "admin@primevest.com", username: "admin" };
+    }
+    const foundUser = users.find((profile) => profile.id === userId);
+    if (foundUser) {
+      const username = foundUser.username ? String(foundUser.username).replace(/^@/, "") : "";
+      return {
+        id: userId,
+        name: username ? `@${username}` : foundUser.name || foundUser.email || "Unnamed User",
+        email: foundUser.email || "Email unavailable",
+        username: username || null,
+      };
+    }
+    return { id: userId, name: "User", email: "Profile loading...", username: null };
+  };
+
+  // ADMIN INBOX: Filter messages for selected user
+  const currentChatMessages = allMessages.filter(
     (m) =>
       (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) ||
       (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
   );
+
+  // USER-TO-USER CHATS: Filter out admin messages
+  const userToUserMessages = allMessages.filter(
+    (m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id)
+  );
+
+  const uniqueConversations = {};
+  userToUserMessages.forEach((m) => {
+    const [user1Id, user2Id] = [m.sender_id, m.receiver_id].sort();
+    const pair = `${user1Id}_${user2Id}`;
+    if (!uniqueConversations[pair]) {
+      uniqueConversations[pair] = {
+        user1Id,
+        user2Id,
+        user1: getUserDetails(user1Id),
+        user2: getUserDetails(user2Id),
+        messages: [],
+      };
+    }
+    uniqueConversations[pair].messages.push(m);
+  });
+  const userToUserConversations = Object.values(uniqueConversations);
 
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
@@ -270,6 +325,9 @@ export function AdminDashboard() {
               <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
             )}
           </button>
+          <button onClick={() => setTab("user_chats")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "user_chats" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
+            <Users size={18} /> User-to-User
+          </button>
           <button onClick={() => setTab("vault")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "vault" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
             <LockIcon size={18} /> Security Vault
           </button>
@@ -289,6 +347,7 @@ export function AdminDashboard() {
             <option value="dashboard">Dashboard</option>
             <option value="users">Users</option>
             <option value="messages">Admin Inbox ({unreadCount})</option>
+            <option value="user_chats">User-to-User</option>
             <option value="vault">Vault</option>
           </select>
         </div>
@@ -303,9 +362,9 @@ export function AdminDashboard() {
           {dataLoading && <p className="text-center text-xs text-slate-500 mb-4">Refreshing admin data...</p>}
 
           {tab === "dashboard" && (
+             /* ... Dashboard Code (Unchanged) ... */
             <div className="max-w-5xl mx-auto space-y-8">
               <h2 className="text-2xl font-bold">Overview</h2>
-
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="rounded-3xl border border-blue-500/20 bg-[#0D1526] p-6">
                   <p className="text-sm font-semibold text-slate-400 mb-2">Real Total Users</p>
@@ -322,7 +381,6 @@ export function AdminDashboard() {
               </div>
 
               <h3 className="text-xl font-bold mt-10 mb-4">Pending Withdrawal Requests</h3>
-
               <div className="space-y-4">
                 {withdrawals.length === 0 ? (
                   <div className="rounded-2xl border border-white/5 bg-[#0D1526] p-8 text-center text-slate-500">No pending withdrawals.</div>
@@ -384,9 +442,9 @@ export function AdminDashboard() {
                       <p className="font-bold">@{u.username || u.name}</p>
                       <p className="text-xs text-slate-400">{u.email}</p>
                     </div>
-                    {adminMessages.filter(m => m.sender_id === u.id && m.receiver_id === ADMIN_UUID && !m.read).length > 0 && (
+                    {allMessages.filter(m => m.sender_id === u.id && m.receiver_id === ADMIN_UUID && !m.read).length > 0 && (
                       <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                        {adminMessages.filter(m => m.sender_id === u.id && m.receiver_id === ADMIN_UUID && !m.read).length}
+                        {allMessages.filter(m => m.sender_id === u.id && m.receiver_id === ADMIN_UUID && !m.read).length}
                       </span>
                     )}
                   </button>
@@ -402,6 +460,9 @@ export function AdminDashboard() {
                         <h2 className="font-bold text-lg text-amber-400">@{selectedUser.username || selectedUser.name}</h2>
                         <p className="text-xs text-slate-400">{selectedUser.email}</p>
                       </div>
+                      <button onClick={() => downloadChat(currentChatMessages, selectedUser.name, "Admin")} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold">
+                        <Download size={14} /> Download
+                      </button>
                     </div>
 
                     <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
@@ -431,6 +492,49 @@ export function AdminDashboard() {
                   <div className="flex-1 flex items-center justify-center text-slate-500">Select a user to start chatting</div>
                 )}
               </div>
+            </div>
+          )}
+
+          {tab === "user_chats" && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-2xl font-bold">User-to-User Chats</h2>
+                <button onClick={loadData} className="rounded-lg bg-slate-800 px-3 py-2 text-xs hover:bg-slate-700 flex items-center gap-2">
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
+
+              {userToUserConversations.length === 0 ? (
+                <p className="text-slate-400">No user-to-user chats found.</p>
+              ) : (
+                userToUserConversations.map((conv, index) => (
+                  <div key={`${conv.user1Id}_${conv.user2Id}`} className="rounded-2xl border border-white/10 bg-[#0D1526] overflow-hidden">
+                    <div className="bg-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10">
+                      <div>
+                        <h3 className="font-bold text-lg text-amber-400">{conv.user1.name} ↔ {conv.user2.name}</h3>
+                        <p className="text-xs text-slate-400">{conv.user1.email} & {conv.user2.email}</p>
+                      </div>
+                      <button onClick={() => downloadChat(conv.messages, conv.user1.name, conv.user2.name)} className="mt-2 sm:mt-0 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-xs px-4 py-2 rounded-lg font-bold">
+                        <Download size={14} /> Download TXT
+                      </button>
+                    </div>
+
+                    <div className="p-4 max-h-72 overflow-y-auto space-y-3 bg-[#070D1A]">
+                      {conv.messages.map((m) => {
+                        const isUser1 = m.sender_id === conv.user1Id;
+                        return (
+                          <div key={m.id} className={`flex ${isUser1 ? "justify-start" : "justify-end"}`}>
+                            <div className={`p-3 rounded-2xl max-w-[80%] text-sm ${isUser1 ? "bg-slate-800 text-slate-200 rounded-tl-sm" : "bg-blue-600 text-white rounded-tr-sm"}`}>
+                              <p>{m.message}</p>
+                              <p className="text-[10px] opacity-60 mt-1">{isUser1 ? conv.user1.name : conv.user2.name}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
