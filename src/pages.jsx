@@ -230,7 +230,8 @@ export function Deposit() {
   const go = () => {
     const n = Number(amount);
     if (!n || n <= 0) return setError("Enter a valid amount.");
-    if (n < 7500) return setError("Minimum ₦7,500.");
+    // 🚨 FIX: Changed minimum to 2000
+    if (n < 2000) return setError("Minimum ₦2,000.");
     if (region !== "Nigeria") window.location.href = `/deposit/bitcoin?amount=${n}`;
     else window.location.href = `/deposit/payment?amount=${n}`;
   };
@@ -252,7 +253,8 @@ export function Deposit() {
         <div className="rounded-3xl bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 p-6">
           <Wallet className="h-8 w-8 text-blue-200" />
           <p className="mt-6 text-sm text-blue-200">Minimum Deposit</p>
-          <h2 className="mt-2 text-4xl font-bold">₦7,500.00</h2>
+          {/* 🚨 FIX: Display changed to 2000 */}
+          <h2 className="mt-2 text-4xl font-bold">₦2,000.00</h2>
         </div>
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
           <label className="mb-2 block text-sm text-slate-300">Region</label>
@@ -268,7 +270,7 @@ export function Deposit() {
             <span className="flex items-center px-4 text-slate-400">₦</span>
             <input value={amount}
               onChange={e => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }}
-              placeholder="7,500" className="w-full bg-transparent px-2 py-4 outline-none" />
+              placeholder="2,000" className="w-full bg-transparent px-2 py-4 outline-none" />
           </div>
           {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
           <button onClick={go} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
@@ -420,8 +422,7 @@ export function Withdraw() {
 
   const next = () => {
     const n = Number(amount);
-    if (!n || n < 14500) return setError("Min ₦14,500.");
-    if (n > 50000) return setError("Max ₦50,000.");
+    if (!n || n <= 0) return setError("Enter a valid amount.");
     if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
     window.location.href = `/withdraw/account?amount=${n}`;
   };
@@ -442,12 +443,13 @@ export function Withdraw() {
           <p className="mt-1 text-2xl font-bold text-blue-400">₦{balance.toLocaleString()}</p>
         </div>
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <label className="mb-2 block text-sm">Amount (Min ₦14,500 - Max ₦50,000)</label>
+          {/* 🚨 FIX: Removed the text that said "Min ₦14,500 - Max ₦50,000" */}
+          <label className="mb-2 block text-sm">Amount</label>
           <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
             <span className="flex items-center px-4 text-slate-400">₦</span>
             <input value={amount}
               onChange={e => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }}
-              placeholder="14,500" className="w-full bg-transparent px-2 py-4 outline-none" />
+              placeholder="Enter amount" className="w-full bg-transparent px-2 py-4 outline-none" />
           </div>
           {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
           <button onClick={next} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
@@ -472,8 +474,12 @@ export function WithdrawAccount() {
   async function proceed() {
     if (!bankName || !accountNumber || !accountName) return setError("Fill all fields.");
     if (accountNumber.length !== 10) return setError("Account number must be 10 digits.");
+    
     setSubmitting(true); setError("");
+    
+    // 🚨 FIX: This calls the API we fixed in app.jsx. It sends all the right data to the database.
     const r = await api.withdraw({ amount, bank_name: bankName, account_number: accountNumber, account_name: accountName });
+    
     setSubmitting(false);
     if (r?.success) setShowPopup(true);
     else setError(r?.error || "Failed.");
