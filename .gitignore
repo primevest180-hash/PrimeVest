@@ -1,4 +1,3 @@
-*.txt
-*.png
-.env
 node_modules
+dist
+.env
