@@ -651,9 +651,20 @@ function HomePage() {
   };
 
   useEffect(() => {
-    loadData();
+    // Force the loading screen to stop after 3 seconds if the database hangs
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
+    loadData().then(() => {
+      clearTimeout(timeout);
+    });
+
     const id = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(id);
+    };
   }, []);
 
   useEffect(() => {

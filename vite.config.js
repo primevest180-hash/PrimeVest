@@ -4,6 +4,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [
     react(),
-    // VitePWA({ ... })  <--- COMMENT THIS OUT OR DELETE IT
+    // VitePWA({ ... })  <--- DELETE OR COMMENT OUT THIS ENTIRE BLOCK
   ],
 })
