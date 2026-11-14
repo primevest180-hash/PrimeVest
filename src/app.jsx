@@ -562,7 +562,7 @@ function LandingPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Add a timeout so it doesn't hang forever
+    // Hard timeout: Force it to stop checking after 2 seconds
     const timeout = setTimeout(() => {
       setChecking(false);
     }, 2000);
@@ -570,9 +570,9 @@ function LandingPage() {
     supabase.auth.getSession().then(({ data }) => {
       clearTimeout(timeout);
       if (data.session) {
-        window.location.href = "/home"; // If logged in, go to dashboard
+        window.location.href = "/home"; 
       } else {
-        setChecking(false); // If not logged in, show the landing page
+        setChecking(false);
       }
     }).catch(() => {
       clearTimeout(timeout);
