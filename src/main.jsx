@@ -4,16 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './app.jsx'
 import './index.css'
 
-// 🚨 NUCLEAR OPTION: Force delete the Service Worker and reload
+// 🚨 NUCLEAR OPTION: Force delete the Service Worker and clear cache
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(function(registrations) {
     for(let registration of registrations) {
       registration.unregister();
     }
-    // Clear all cache storage
-    caches.keys().then(function(names) {
-      for (let name of names) caches.delete(name);
-    });
+  });
+  caches.keys().then(function(names) {
+    for (let name of names) caches.delete(name);
   });
 }
 
