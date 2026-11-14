@@ -611,13 +611,18 @@ function HomePage() {
         w = r.data;
       }
 
-      // 2. Profile & other data (Using Promise.all with fallbacks)
-      const [p, i, n, referral] = await Promise.all([
-        api.profile().catch(() => ({ data: null })),
-        api.portfolio().catch(() => ({ data: [] })),
-        api.notifications().catch(() => ({ data: [] })),
-        supabase.rpc("get_my_referral_code").catch(() => ({ data: null }))
-      ]);
+      // 2. Profile & other data (Fixed the .catch error)
+      const p = await api.profile();
+      const i = await api.portfolio();
+      const n = await api.notifications();
+      
+      let referralData = null;
+      try {
+        const refRes = await supabase.rpc("get_my_referral_code");
+        referralData = refRes.data;
+      } catch (e) {
+        console.log("Referral code error", e);
+      }
       
       // 3. Announcement
       let announcementData = null;
@@ -630,7 +635,7 @@ function HomePage() {
 
       // 4. Set State
       if (w) setWallet(w);
-      if (p.data) setProfile({ ...p.data, referral_code: referral.data || p.data.referral_code || "" });
+      if (p.data) setProfile({ ...p.data, referral_code: referralData || p.data.referral_code || "" });
       if (i.data) setInvestments(i.data);
       if (n.data) setNotifications(n.data);
       
