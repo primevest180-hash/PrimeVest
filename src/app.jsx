@@ -110,7 +110,7 @@ export const api = {
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
     const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },
@@ -563,17 +563,16 @@ function LandingPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Add a timeout so it doesn't hang forever
     const timeout = setTimeout(() => {
       setChecking(false);
-    }, 2000);
+    }, 1500);
 
     supabase.auth.getSession().then(({ data }) => {
       clearTimeout(timeout);
       if (data.session) {
-        window.location.href = "/home"; // If logged in, go to dashboard
+        window.location.href = "/home"; 
       } else {
-        setChecking(false); // If not logged in, show the landing page
+        setChecking(false);
       }
     }).catch(() => {
       clearTimeout(timeout);
@@ -670,7 +669,6 @@ function HomePage() {
   };
 
   useEffect(() => {
-    // Force the loading screen to stop after 3 seconds if the database hangs
     const timeout = setTimeout(() => {
       setLoading(false);
     }, 3000);
