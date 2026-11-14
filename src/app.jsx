@@ -560,16 +560,34 @@ function InvestmentCards() {
 
 function LandingPage() {
   const [checking, setChecking] = useState(true);
+
   useEffect(() => {
+    // Add a timeout so it doesn't hang forever
+    const timeout = setTimeout(() => {
+      setChecking(false);
+    }, 2000);
+
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.href = "/home";
-      else setChecking(false);
+      clearTimeout(timeout);
+      if (data.session) {
+        window.location.href = "/home"; // If logged in, go to dashboard
+      } else {
+        setChecking(false); // If not logged in, show the landing page
+      }
+    }).catch(() => {
+      clearTimeout(timeout);
+      setChecking(false);
     });
   }, []);
+
   if (checking) return <LoadingScreen />;
+
   return (
     <main className="min-h-screen bg-slate-950">
-      <Navbar /><Hero /><Stats /><InvestmentCards />
+      <Navbar />
+      <Hero />
+      <Stats />
+      <InvestmentCards />
     </main>
   );
 }
