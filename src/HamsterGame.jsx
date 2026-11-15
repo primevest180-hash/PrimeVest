@@ -41,8 +41,9 @@ export function HamsterGame() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) friendIds.push(user.id);
 
+      // 🚨 FIXED: Querying "hamster_game" instead of "hamster_states"
       const { data: board } = await supabase
-        .from('hamster_states')
+        .from('hamster_game')
         .select('user_id, coins, profiles(username, name)')
         .in('user_id', friendIds)
         .order('coins', { ascending: false });
@@ -123,7 +124,7 @@ export function HamsterGame() {
     document.getElementById(`hamster-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // 🚨 FIX: 1 Click = -100 Energy, 5 Taps = 1 HC
+  // 🚨 FIX: Forces the database to drain 100 energy and give 1 HC (5 taps = 1 HC)
   async function tapHamster() {
     if (busy || isLocked || energy < 100) return; 
     setTapEffect(v => v + 1);
@@ -227,7 +228,7 @@ export function HamsterGame() {
                   <p className="mt-2 text-xs font-black text-amber-300">{fmt(u.cost)} HC</p>
                 </div>
                 <div className="flex flex-col gap-1">
-                  {/* 🚨 REMOVED BUY HC BUTTON */}
+                  {/* REMOVED BUY HC BUTTON */}
                   <button onClick={() => buyWithPaystack(u.key, u.paystack)} className="rounded-lg border border-white/20 px-4 py-2 text-[10px] font-black">PAY ₦{u.paystack}</button>
                 </div>
               </div>
