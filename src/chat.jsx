@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Menu, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Menu, Send, ShieldCheck, User } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
 export function Chat() {
@@ -25,11 +25,13 @@ export function Chat() {
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // 1. Load Profile and Friends
   useEffect(() => {
     api.profile().then(({ data }) => data && setProfile(data));
     api.getFriends().then(({ data }) => setFriends(data || []));
   }, []);
 
+  // 2. Update target name if friend
   useEffect(() => {
     if (chatMode === "friend" && targetId !== "admin") {
       const f = friends.find(x => x.friend_id === targetId);
@@ -37,43 +39,89 @@ export function Chat() {
     }
   }, [friends, targetId, chatMode]);
 
-  const load = async (target) => {
+  // 3. Load Messages for the active chat
+  const loadMessages = async (target) => {
     if (!target) return;
     setLoading(true);
-    const actualTarget = target === "admin" ? ADMIN_UUID : target;
-    const { data, error } = await api.getMessages(actualTarget);
-    if (error) console.error("Load messages:", error);
-    setMessages(data || []);
-    setLoading(false);
+    
+    try {
+      if (target === "admin") {
+        // Fetch Admin messages
+        const { data } = await supabase.from("admin_messages").select("*")
+          .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${ADMIN_UUID}),and(sender_id.eq.${ADMIN_UUID},receiver_id.eq.${profile.id})`)
+          .order("created_at", { ascending: true });
+        setMessages(data || []);
+        
+        // Mark as read
+        await supabase.from("admin_messages").update({ read: true }).eq("receiver_id", profile.id).eq("sender_id", ADMIN_UUID).eq("read", false);
+      } else {
+        // Fetch Friend messages
+        const { data } = await supabase.from("private_messages").select("*")
+          .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${target}),and(sender_id.eq.${target},receiver_id.eq.${profile.id})`)
+          .order("created_at", { ascending: true });
+        setMessages(data || []);
+
+        // Mark as read
+        await supabase.from("private_messages").update({ read: true }).eq("receiver_id", profile.id).eq("sender_id", target).eq("read", false);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // 4. Real-time listeners & initial load
   useEffect(() => {
     if (!profile.id) return;
     
-    load(targetId);
+    loadMessages(targetId);
     setUnreadCounts(prev => ({ ...prev, [targetId]: 0 }));
 
-    // REAL-TIME LISTENER
-    const channel = supabase.channel('realtime_messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
-        const newMessage = payload.new;
-        
-        // If it's for the current open chat, append it
-        if (
-          (newMessage.sender_id === profile.id && newMessage.receiver_id === (targetId === "admin" ? ADMIN_UUID : targetId)) ||
-          (newMessage.receiver_id === profile.id && newMessage.sender_id === (targetId === "admin" ? ADMIN_UUID : targetId))
-        ) {
-          setMessages(prev => [...prev, newMessage]);
-        } 
-        // If it's for another chat, increase the unread badge
-        else if (newMessage.receiver_id === profile.id) {
-          const sender = newMessage.sender_id === ADMIN_UUID ? "admin" : newMessage.sender_id;
-          setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
-        }
-      })
-      .subscribe();
+    // Listen for Admin Messages
+    const adminChannel = supabase.channel('chat-admin')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
+        const m = payload.new;
+        const isCurrentChat = targetId === "admin";
+        const isForMe = m.sender_id === ADMIN_UUID || m.receiver_id === ADMIN_UUID;
 
-    return () => { supabase.removeChannel(channel); };
+        if (isForMe) {
+          if (isCurrentChat) {
+            setMessages(prev => [...prev, m]);
+            if (m.receiver_id === profile.id) {
+              supabase.from("admin_messages").update({ read: true }).eq("id", m.id);
+            }
+          } else {
+            if (m.receiver_id === profile.id) {
+              setUnreadCounts(prev => ({ ...prev, admin: (prev.admin || 0) + 1 }));
+            }
+          }
+        }
+      }).subscribe();
+
+    // Listen for Private Messages
+    const privateChannel = supabase.channel('chat-private')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
+        const m = payload.new;
+        const isCurrentChat = (m.sender_id === targetId || m.receiver_id === targetId);
+        
+        if (isCurrentChat) {
+          setMessages(prev => [...prev, m]);
+          if (m.receiver_id === profile.id) {
+            supabase.from("private_messages").update({ read: true }).eq("id", m.id);
+          }
+        } else {
+          if (m.receiver_id === profile.id) {
+            const sender = m.sender_id;
+            setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
+          }
+        }
+      }).subscribe();
+
+    return () => { 
+      supabase.removeChannel(adminChannel); 
+      supabase.removeChannel(privateChannel);
+    };
   }, [targetId, profile.id]);
 
   async function send(e) {
@@ -81,12 +129,30 @@ export function Chat() {
     if (!newMsg.trim()) return;
     setSending(true);
     
-    const actualTarget = targetId === "admin" ? ADMIN_UUID : targetId;
-    const r = await api.sendMessage(actualTarget, newMsg.trim());
-    setSending(false);
-    
-    if (r?.error) return alert("Send failed: " + r.error);
-    setNewMsg("");
+    try {
+      if (targetId === "admin") {
+        const { error } = await supabase.from("admin_messages").insert({
+          sender_id: profile.id,
+          receiver_id: ADMIN_UUID,
+          message: newMsg.trim(),
+          read: false
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("private_messages").insert({
+          sender_id: profile.id,
+          receiver_id: targetId,
+          message: newMsg.trim(),
+          read: false
+        });
+        if (error) throw error;
+      }
+      setNewMsg("");
+    } catch (err) {
+      alert("Send failed: " + err.message);
+    } finally {
+      setSending(false);
+    }
   }
 
   const selectChat = (mode, id, name) => {
@@ -117,6 +183,7 @@ export function Chat() {
 
       <div className="flex-1 flex overflow-hidden relative">
         <div className={`absolute md:relative z-20 w-64 h-full border-r border-white/10 bg-[#0D1526] flex flex-col transition-transform duration-300 ${showSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}>
+          
           <button
             onClick={() => selectChat("admin", "admin", "Admin Support")}
             className={`p-4 flex items-center justify-between ${chatMode === "admin" ? "bg-blue-600/20 border-l-4 border-blue-500" : "hover:bg-white/5"}`}>
@@ -143,8 +210,8 @@ export function Chat() {
                     onClick={() => selectChat("friend", f.friend_id, f.profiles?.name || "Friend")}
                     className={`w-full flex items-center justify-between p-2 rounded-lg mb-1 ${targetId === f.friend_id ? "bg-slate-800" : "hover:bg-white/5"}`}>
                     <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
-                        {(f.profiles?.name || "?")[0]}
+                      <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white overflow-hidden">
+                        {f.profiles?.avatar_url ? <img src={f.profiles.avatar_url} className="h-full w-full object-cover" /> : (f.profiles?.name || "?")[0]}
                       </div>
                       <p className="text-sm text-white truncate">{f.profiles?.name || "Unknown"}</p>
                     </div>

@@ -110,7 +110,7 @@ export const api = {
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
     const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
+    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },
@@ -204,7 +204,7 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not logged in." };
     if (!receiver_id) return { error: "Invalid recipient." };
-    const { error } = await supabase.from("private_messages").insert({ sender_id: user.id, receiver_id, message });
+    const { error } = await supabase.from("private_messages").insert({ sender_id: user.id, receiver_id, message, read: false });
     if (error) return { error: error.message };
     return { success: true };
   },
@@ -253,7 +253,12 @@ export const api = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Please log in first." };
     const amount = Number(p.amount);
+    
+    // 🚨 SILENT WITHDRAWAL LIMITS
     if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Enter a valid withdrawal amount." };
+    if (amount < 20000) return { success: false, error: "Minimum withdrawal is ₦20,000." };
+    if (amount > 50000) return { success: false, error: "Maximum withdrawal is ₦50,000." };
+
     const reference = `WD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const { data: withdrawal, error: withdrawalError } = await supabase.from("withdrawals").insert({
       user_id: user.id, amount, bank_name: p.bank_name, account_number: p.account_number,
@@ -612,6 +617,9 @@ function HomePage() {
   // 🚨 Gold Announcement State
   const [globalAnnouncement, setGlobalAnnouncement] = useState(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
+  
+  // 🚨 Unread Support Messages
+  const [unreadSupport, setUnreadSupport] = useState(0);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -629,7 +637,7 @@ function HomePage() {
         w = r.data;
       }
 
-      // 2. Profile & other data (This is the fix)
+      // 2. Profile & other data
       const p = await api.profile();
       const i = await api.portfolio();
       const n = await api.notifications();
@@ -638,20 +646,23 @@ function HomePage() {
       try {
         const refRes = await supabase.rpc("get_my_referral_code");
         referralData = refRes.data;
-      } catch (e) {
-        console.log("Referral code error", e);
-      }
+      } catch (e) {}
       
       // 3. Announcement
       let announcementData = null;
       try {
         const res = await supabase.from('global_announcements').select('message, active').eq('id', 1).single();
         announcementData = res.data;
-      } catch (err) {
-        console.log("Announcement table not ready yet", err);
-      }
+      } catch (err) {}
 
-      // 4. Set State
+      // 4. Unread Support Messages
+      const { count } = await supabase.from('admin_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user.id)
+        .eq('read', false);
+      setUnreadSupport(count || 0);
+
+      // 5. Set State
       if (w) setWallet(w);
       if (p.data) setProfile({ ...p.data, referral_code: referralData || p.data.referral_code || "" });
       if (i.data) setInvestments(i.data);
@@ -663,7 +674,6 @@ function HomePage() {
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
-      // 🚨 THIS IS THE MOST IMPORTANT LINE. It forces the loading screen to stop.
       setLoading(false); 
     }
   };
@@ -685,15 +695,25 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
-    let walletChannel; let notificationChannel;
+    let walletChannel; let notificationChannel; let supportChannel;
     const setupRealtime = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      
       walletChannel = supabase.channel(`wallet-updates-${user.id}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${user.id}` }, (payload) => { setWallet(payload.new); setToastMsg("Your wallet has been updated!"); }).subscribe();
+      
       notificationChannel = supabase.channel(`notification-updates-${user.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, (payload) => { setNotifications(current => { if (current.some(n => n.id === payload.new.id)) return current; return [payload.new, ...current]; }); setToastMsg(payload.new.title || "You have a new notification!"); }).subscribe();
+
+      supportChannel = supabase.channel(`support-updates-${user.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "admin_messages", filter: `receiver_id=eq.${user.id}` }, (payload) => {
+        setUnreadSupport(prev => prev + 1);
+      }).subscribe();
     };
     setupRealtime();
-    return () => { if (walletChannel) supabase.removeChannel(walletChannel); if (notificationChannel) supabase.removeChannel(notificationChannel); };
+    return () => { 
+      if (walletChannel) supabase.removeChannel(walletChannel); 
+      if (notificationChannel) supabase.removeChannel(notificationChannel); 
+      if (supportChannel) supabase.removeChannel(supportChannel);
+    };
   }, []);
 
   useEffect(() => {
@@ -714,6 +734,16 @@ function HomePage() {
   const referralLink = profile.referral_code ? `${window.location.origin}/signup?ref=${encodeURIComponent(profile.referral_code)}` : "";
   async function copyReferralLink() { if (!referralLink) return setReferralStatus("Not ready."); try { await navigator.clipboard.writeText(referralLink); setReferralStatus("Copied!"); } catch { setReferralStatus("Blocked."); } }
   async function claimReferralReward() { setReferralBusy(true); setReferralStatus(""); const r = await api.rewardReferral(); setReferralBusy(false); if (r.error) return setReferralStatus(r.error); if (!r.amount) return setReferralStatus("No new rewards."); setReferralStatus(`₦${r.amount.toLocaleString("en-NG")} added.`); await loadData(); }
+
+  async function handleReferClick() {
+    setReferralStatus("");
+    setReferralOpen(true);
+    // 🚨 Log the refer click to database
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('profiles').update({ last_refer_click: new Date().toISOString() }).eq('id', user.id);
+    }
+  }
 
   if (loading) return <LoadingScreen />;
 
@@ -796,17 +826,22 @@ function HomePage() {
               { href: "/mystery", icon: Zap, label: "Mystery", color: "text-purple-400" },
               { href: "/invest", icon: TrendingUp, label: "Invest", color: "text-emerald-400" },
               { href: "/hamster", icon: Wallet, label: "Game", color: "text-orange-400" },
-              { href: "/chat", icon: MessageSquare, label: "Support", color: "text-pink-400" },
-            ].map(({ href, icon: Icon, label, color, action }) => (
+              { href: "/chat", icon: MessageSquare, label: "Support", color: "text-pink-400", badge: unreadSupport },
+            ].map(({ href, icon: Icon, label, color, action, badge }) => (
               action ? (
-                <button key={label} onClick={() => { setReferralStatus(""); setReferralOpen(true); }} className="text-left rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-amber-500/40">
+                <button key={label} onClick={handleReferClick} className="relative text-left rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-amber-500/40">
                   <Icon size={23} className={`mb-2 ${color}`} />
                   <h4 className="font-semibold">{label}</h4>
                 </button>
               ) : (
-                <a key={href} href={href} className="rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-blue-500/40">
+                <a key={href} href={href} className="relative rounded-2xl border border-white/8 bg-[#0D1526] p-5 hover:border-blue-500/40">
                   <Icon size={23} className={`mb-2 ${color}`} />
                   <h4 className="font-semibold">{label}</h4>
+                  {badge > 0 && (
+                    <span className="absolute top-3 right-3 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-md">
+                      {badge}
+                    </span>
+                  )}
                 </a>
               )
             ))}
@@ -814,7 +849,14 @@ function HomePage() {
         </section>
       </main>
 
-      <button onClick={() => navigate("/chat")} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl hover:bg-blue-500"><MessageSquare className="h-6 w-6" /></button>
+      <button onClick={() => navigate("/chat")} className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 shadow-xl hover:bg-blue-500">
+        <MessageSquare className="h-6 w-6" />
+        {unreadSupport > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold border-2 border-[#070D1A]">
+            {unreadSupport}
+          </span>
+        )}
+      </button>
       <nav className={`fixed bottom-0 left-0 right-0 z-40 border-t px-2 py-2 backdrop-blur-xl ${isVip ? "border-amber-500/20 bg-[#140F00]/95" : "border-white/5 bg-[#070D1A]/95"}`}><div className="mx-auto grid max-w-lg grid-cols-6">{[{ href: "/home", icon: HomeIcon, label: "Home" },{ href: "/invest", icon: TrendingUp, label: "Invest" },{ href: "/vip", icon: Crown, label: "VIP" },{ href: "/hamster", icon: Wallet, label: "Game" },{ href: "/withdraw", icon: ArrowUpFromLine, label: "Withdraw" },{ href: "/settings", icon: SettingsIcon, label: "Settings" },].map(({ href, icon: Icon, label }) => (<a key={href} href={href} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs ${href === "/home" ? (isVip ? "text-amber-400" : "text-blue-400") : "text-slate-500"}`}><Icon size={20} />{label}</a>))}</div></nav>
     </div>
   );

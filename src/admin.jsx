@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Lock as LockIcon, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus
+  Lock as LockIcon, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus, X, Check
 } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
@@ -24,11 +24,12 @@ export function AdminDashboard() {
   const [privateMessages, setPrivateMessages] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [newMessage, setNewMessage] = useState("");
-  const [unreadCount, setUnreadCount] = useState(0);
-
+  
   // Announcement states
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementActive, setAnnouncementActive] = useState(false);
+  const [directUser, setDirectUser] = useState("");
+  const [directMsg, setDirectMsg] = useState("");
 
   const [stats, setStats] = useState({ usersCount: 0, totalWithdrawn: 0, pendingWithdrawals: 0 });
   const [processing, setProcessing] = useState(null);
@@ -53,9 +54,6 @@ export function AdminDashboard() {
       setAllMessages(adminMsg.data || []);
       setPrivateMessages(privateMsg.data || []);
 
-      const unread = (adminMsg.data || []).filter(m => m.receiver_id === ADMIN_UUID && !m.read).length;
-      setUnreadCount(unread);
-
       if (announcementResult.data) {
         setAnnouncementText(announcementResult.data.message || "");
         setAnnouncementActive(announcementResult.data.active || false);
@@ -73,21 +71,17 @@ export function AdminDashboard() {
   useEffect(() => {
     if (!authed) return;
 
-    // Listen for new users registering
     const profileChannel = supabase.channel('admin-profiles')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, (payload) => {
         setUsers(prev => [payload.new, ...prev]);
         setStats(prev => ({ ...prev, usersCount: prev.usersCount + 1 }));
       }).subscribe();
 
-    // Listen for new admin messages
     const adminMsgChannel = supabase.channel('admin-messages-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         setAllMessages(prev => [...prev, payload.new]);
-        if (payload.new.receiver_id === ADMIN_UUID && !payload.new.read) setUnreadCount(prev => prev + 1);
       }).subscribe();
 
-    // Listen for new user-to-user messages
     const privateMsgChannel = supabase.channel('private-messages-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
         setPrivateMessages(prev => [...prev, payload.new]);
@@ -165,6 +159,27 @@ export function AdminDashboard() {
     alert("Global announcement updated!");
   }
 
+  async function clearGlobalAnnouncement() {
+    setAnnouncementText("");
+    setAnnouncementActive(false);
+    await supabase.from('global_announcements').update({ message: "", active: false }).eq('id', 1);
+    alert("Global announcement removed.");
+  }
+
+  async function sendDirectAnnouncement(e) {
+    e.preventDefault();
+    if (!directUser || !directMsg.trim()) return alert("Select a user and type a message.");
+    const msg = { sender_id: ADMIN_UUID, receiver_id: directUser, message: directMsg.trim(), read: false };
+    const { error } = await supabase.from('admin_messages').insert(msg);
+    if (error) alert("Failed to send: " + error.message);
+    else {
+      alert("Direct message sent!");
+      setDirectMsg("");
+      setDirectUser("");
+      await loadData();
+    }
+  }
+
   if (loading) return <div className="min-h-screen bg-[#070D1A] text-white flex items-center justify-center">Loading...</div>;
 
   if (!authed) {
@@ -191,11 +206,21 @@ export function AdminDashboard() {
     return { id: userId, name: "User", email: "Profile loading..." };
   };
 
-  const currentChatMessages = allMessages.filter(
-    (m) => (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) || (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
-  );
+  // 🚨 WHATSAPP LOGIC: Group Admin Messages by User & Count Unread
+  const adminChats = {};
+  allMessages.forEach(m => {
+    if (m.sender_id === ADMIN_UUID) {
+      if (!adminChats[m.receiver_id]) adminChats[m.receiver_id] = { user: getUserDetails(m.receiver_id), unread: 0, lastMsg: m };
+      adminChats[m.receiver_id].lastMsg = m;
+    } else if (m.receiver_id === ADMIN_UUID) {
+      if (!adminChats[m.sender_id]) adminChats[m.sender_id] = { user: getUserDetails(m.sender_id), unread: 0, lastMsg: m };
+      adminChats[m.sender_id].lastMsg = m;
+      if (!m.read) adminChats[m.sender_id].unread += 1;
+    }
+  });
+  const adminChatList = Object.values(adminChats).sort((a, b) => new Date(b.lastMsg.created_at) - new Date(a.lastMsg.created_at));
 
-  // Filter private messages for User-to-User tab
+  // 🚨 WHATSAPP LOGIC: Group User-to-User Messages
   const userToUserMessages = privateMessages.filter((m) => !ADMIN_UUIDS.includes(m.sender_id) && !ADMIN_UUIDS.includes(m.receiver_id));
   const uniqueConversations = {};
   userToUserMessages.forEach((m) => {
@@ -204,7 +229,13 @@ export function AdminDashboard() {
     if (!uniqueConversations[pair]) uniqueConversations[pair] = { user1Id, user2Id, user1: getUserDetails(user1Id), user2: getUserDetails(user2Id), messages: [] };
     uniqueConversations[pair].messages.push(m);
   });
-  const userToUserConversations = Object.values(uniqueConversations);
+  const userToUserConversations = Object.values(uniqueConversations).sort((a, b) => new Date(b.messages[b.messages.length-1].created_at) - new Date(a.messages[a.messages.length-1].created_at));
+
+  const currentChatMessages = allMessages.filter(
+    (m) => (m.sender_id === ADMIN_UUID && m.receiver_id === selectedUser?.id) || (m.sender_id === selectedUser?.id && m.receiver_id === ADMIN_UUID)
+  );
+
+  const totalUnreadAdmin = adminChatList.reduce((sum, chat) => sum + chat.unread, 0);
 
   return (
     <div className="min-h-screen bg-[#070D1A] flex text-white font-sans">
@@ -215,14 +246,11 @@ export function AdminDashboard() {
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "dashboard" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Dashboard</button>
           <button onClick={() => setTab("users")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "users" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> Manage Users</button>
-          
-          {/* Refer Clicks Tab (Simulating by showing users with last_refer_click) */}
           <button onClick={() => setTab("referrals")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "referrals" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><UserPlus size={18} /> Refer Clicks</button>
-          
           <button onClick={() => setTab("announcements")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "announcements" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Megaphone size={18} /> Announcements</button>
           <button onClick={() => setTab("messages")} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "messages" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
             <div className="flex items-center gap-3"><MessageSquare size={18} /> Admin Inbox</div>
-            {unreadCount > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>}
+            {totalUnreadAdmin > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{totalUnreadAdmin}</span>}
           </button>
           <button onClick={() => setTab("user_chats")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "user_chats" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> User-to-User</button>
         </nav>
@@ -237,7 +265,7 @@ export function AdminDashboard() {
             <option value="users">Users</option>
             <option value="referrals">Referrals</option>
             <option value="announcements">Announcements</option>
-            <option value="messages">Inbox ({unreadCount})</option>
+            <option value="messages">Inbox ({totalUnreadAdmin})</option>
             <option value="user_chats">User Chats</option>
           </select>
         </div>
@@ -253,6 +281,26 @@ export function AdminDashboard() {
                 <div className="rounded-3xl border border-blue-500/20 bg-[#0D1526] p-6"><p className="text-sm font-semibold text-slate-400 mb-2">Users</p><p className="text-4xl font-bold">{stats.usersCount}</p></div>
                 <div className="rounded-3xl border border-emerald-500/20 bg-[#0D1526] p-6"><p className="text-sm font-semibold text-slate-400 mb-2">Withdrawn</p><p className="text-4xl font-bold text-emerald-400">₦{Number(stats.totalWithdrawn).toLocaleString()}</p></div>
                 <div className="rounded-3xl border border-amber-500/20 bg-[#0D1526] p-6"><p className="text-sm font-semibold text-slate-400 mb-2">Pending</p><p className="text-4xl font-bold text-amber-400">₦{Number(stats.pendingWithdrawals).toLocaleString()}</p></div>
+              </div>
+              
+              <h3 className="text-xl font-bold mt-10 mb-4">Pending Withdrawals</h3>
+              <div className="space-y-4">
+                {withdrawals.length === 0 ? (
+                  <div className="rounded-2xl border border-white/5 bg-[#0D1526] p-8 text-center text-slate-500">No pending withdrawals.</div>
+                ) : (
+                  withdrawals.map((w) => (
+                    <div key={w.id} className="rounded-2xl border border-white/5 bg-[#0D1526] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-bold">₦{Number(w.amount).toLocaleString()}</p>
+                        <p className="text-sm text-slate-400 mt-1">{w.account_name} - {w.account_number} ({w.bank_name})</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => approve(w)} disabled={processing === w.id} className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-bold hover:bg-emerald-500 disabled:opacity-50">Approve</button>
+                        <button onClick={() => reject(w)} disabled={processing === w.id} className="rounded-xl bg-red-600/10 border border-red-500/20 text-red-400 px-6 py-2 text-sm font-bold hover:bg-red-600/20 disabled:opacity-50">Reject</button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -278,6 +326,7 @@ export function AdminDashboard() {
           {tab === "announcements" && (
             <div className="max-w-4xl mx-auto space-y-8">
               <h2 className="text-2xl font-bold flex items-center gap-2"><Megaphone /> Announcements</h2>
+              
               <div className="rounded-2xl border border-amber-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-amber-500/5">
                 <h3 className="text-lg font-bold text-amber-400">Global Announcement (All Users)</h3>
                 <textarea value={announcementText} onChange={(e) => setAnnouncementText(e.target.value)} placeholder="Type your global message here..." className="w-full h-32 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-amber-500" />
@@ -286,8 +335,27 @@ export function AdminDashboard() {
                     <input type="checkbox" checked={announcementActive} onChange={(e) => setAnnouncementActive(e.target.checked)} className="w-5 h-5 accent-amber-500" /> 
                     Activate Banner
                   </label>
-                  <button onClick={saveGlobalAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Publish</button>
+                  <div className="flex gap-2">
+                    <button onClick={clearGlobalAnnouncement} className="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-2 rounded-xl font-bold hover:bg-red-500/20">Remove</button>
+                    <button onClick={saveGlobalAnnouncement} className="bg-amber-600 hover:bg-amber-500 px-6 py-2 rounded-xl font-bold text-black">Publish</button>
+                  </div>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-blue-500/30 bg-[#0D1526] p-6 space-y-4 shadow-lg shadow-blue-500/5">
+                <h3 className="text-lg font-bold text-blue-400">Direct Message (Specific User)</h3>
+                <form onSubmit={sendDirectAnnouncement} className="flex flex-col gap-4">
+                  <select value={directUser} onChange={(e) => setDirectUser(e.target.value)} className="w-full bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500">
+                    <option value="">-- Select a user --</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.username ? `@${u.username}` : u.name || u.email} ({u.email})</option>
+                    ))}
+                  </select>
+                  <textarea value={directMsg} onChange={(e) => setDirectMsg(e.target.value)} placeholder="Type your direct message here..." className="w-full h-24 bg-slate-950 p-4 rounded-xl text-white outline-none border border-white/10 focus:border-blue-500" />
+                  <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                    <Send size={18} /> Send Direct Message
+                  </button>
+                </form>
               </div>
             </div>
           )}
@@ -316,22 +384,30 @@ export function AdminDashboard() {
             <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 h-[75vh]">
               <div className="w-full md:w-1/3 border border-white/10 rounded-2xl bg-[#0D1526] overflow-y-auto">
                 <div className="p-4 border-b border-white/10 font-bold text-lg bg-[#0D1526] sticky top-0 flex justify-between items-center">
-                  Users <button onClick={loadData} className="text-xs bg-slate-800 p-2 rounded-lg hover:bg-slate-700"><RefreshCw size={14} /></button>
+                  Chats <button onClick={loadData} className="text-xs bg-slate-800 p-2 rounded-lg hover:bg-slate-700"><RefreshCw size={14} /></button>
                 </div>
-                {users.map((u) => (
-                  <button key={u.id} onClick={() => openChat(u)} className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 flex justify-between items-center ${selectedUser?.id === u.id ? 'bg-white/10' : ''}`}>
-                    <div>
-                      <p className="font-bold">@{u.username || u.name}</p>
-                      <p className="text-xs text-slate-400">{u.email}</p>
-                    </div>
-                  </button>
-                ))}
+                {adminChatList.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-slate-500">No chats yet.</p>
+                ) : (
+                  adminChatList.map((chat) => (
+                    <button key={chat.user.id} onClick={() => openChat(chat.user)} className={`w-full text-left p-4 border-b border-white/5 hover:bg-white/5 flex justify-between items-center ${selectedUser?.id === chat.user.id ? 'bg-white/10' : ''}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold truncate">{chat.user.name}</p>
+                        <p className="text-xs text-slate-400 truncate">{chat.lastMsg.message}</p>
+                      </div>
+                      <div className="flex flex-col items-end ml-2">
+                        <span className="text-[10px] text-slate-500">{new Date(chat.lastMsg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        {chat.unread > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full mt-1">{chat.unread}</span>}
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
               <div className="w-full md:w-2/3 border border-white/10 rounded-2xl bg-[#070D1A] flex flex-col">
                 {selectedUser ? (
                   <>
                     <div className="p-4 border-b border-white/10 bg-[#0D1526] rounded-t-2xl flex justify-between">
-                      <h2 className="font-bold text-lg text-amber-400">@{selectedUser.username || selectedUser.name}</h2>
+                      <h2 className="font-bold text-lg text-amber-400">{selectedUser.name}</h2>
                     </div>
                     <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-4">
                       {currentChatMessages.map((m, i) => (
@@ -344,7 +420,7 @@ export function AdminDashboard() {
                       <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-6 rounded-xl font-bold flex items-center gap-2"><Send size={18} /> Send</button>
                     </form>
                   </>
-                ) : <div className="flex-1 flex items-center justify-center text-slate-500">Select a user</div>}
+                ) : <div className="flex-1 flex items-center justify-center text-slate-500">Select a chat to view messages</div>}
               </div>
             </div>
           )}
