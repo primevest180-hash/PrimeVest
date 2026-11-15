@@ -25,13 +25,11 @@ export function Chat() {
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { scrollToBottom(); }, [messages]);
 
-  // 1. Load Profile and Friends
   useEffect(() => {
     api.profile().then(({ data }) => data && setProfile(data));
     api.getFriends().then(({ data }) => setFriends(data || []));
   }, []);
 
-  // 2. Update target name if friend
   useEffect(() => {
     if (chatMode === "friend" && targetId !== "admin") {
       const f = friends.find(x => x.friend_id === targetId);
@@ -39,29 +37,22 @@ export function Chat() {
     }
   }, [friends, targetId, chatMode]);
 
-  // 3. Load Messages for the active chat
   const loadMessages = async (target) => {
-    if (!target) return;
+    if (!target || !profile.id) return;
     setLoading(true);
     
     try {
       if (target === "admin") {
-        // Fetch Admin messages
         const { data } = await supabase.from("admin_messages").select("*")
           .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${ADMIN_UUID}),and(sender_id.eq.${ADMIN_UUID},receiver_id.eq.${profile.id})`)
           .order("created_at", { ascending: true });
         setMessages(data || []);
-        
-        // Mark as read
         await supabase.from("admin_messages").update({ read: true }).eq("receiver_id", profile.id).eq("sender_id", ADMIN_UUID).eq("read", false);
       } else {
-        // Fetch Friend messages
         const { data } = await supabase.from("private_messages").select("*")
           .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${target}),and(sender_id.eq.${target},receiver_id.eq.${profile.id})`)
           .order("created_at", { ascending: true });
         setMessages(data || []);
-
-        // Mark as read
         await supabase.from("private_messages").update({ read: true }).eq("receiver_id", profile.id).eq("sender_id", target).eq("read", false);
       }
     } catch (err) {
@@ -71,14 +62,12 @@ export function Chat() {
     }
   };
 
-  // 4. Real-time listeners & initial load
   useEffect(() => {
     if (!profile.id) return;
     
     loadMessages(targetId);
     setUnreadCounts(prev => ({ ...prev, [targetId]: 0 }));
 
-    // Listen for Admin Messages
     const adminChannel = supabase.channel('chat-admin')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         const m = payload.new;
@@ -88,18 +77,13 @@ export function Chat() {
         if (isForMe) {
           if (isCurrentChat) {
             setMessages(prev => [...prev, m]);
-            if (m.receiver_id === profile.id) {
-              supabase.from("admin_messages").update({ read: true }).eq("id", m.id);
-            }
+            if (m.receiver_id === profile.id) supabase.from("admin_messages").update({ read: true }).eq("id", m.id);
           } else {
-            if (m.receiver_id === profile.id) {
-              setUnreadCounts(prev => ({ ...prev, admin: (prev.admin || 0) + 1 }));
-            }
+            if (m.receiver_id === profile.id) setUnreadCounts(prev => ({ ...prev, admin: (prev.admin || 0) + 1 }));
           }
         }
       }).subscribe();
 
-    // Listen for Private Messages
     const privateChannel = supabase.channel('chat-private')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
         const m = payload.new;
@@ -107,9 +91,7 @@ export function Chat() {
         
         if (isCurrentChat) {
           setMessages(prev => [...prev, m]);
-          if (m.receiver_id === profile.id) {
-            supabase.from("private_messages").update({ read: true }).eq("id", m.id);
-          }
+          if (m.receiver_id === profile.id) supabase.from("private_messages").update({ read: true }).eq("id", m.id);
         } else {
           if (m.receiver_id === profile.id) {
             const sender = m.sender_id;

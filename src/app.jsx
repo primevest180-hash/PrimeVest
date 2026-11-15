@@ -110,7 +110,7 @@ export const api = {
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
     const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },
@@ -254,10 +254,10 @@ export const api = {
     if (!user) return { success: false, error: "Please log in first." };
     const amount = Number(p.amount);
     
-    // 🚨 SILENT WITHDRAWAL LIMITS
+    // 🚨 SILENT WITHDRAWAL LIMITS: Min 20k, Max 50k
     if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Enter a valid withdrawal amount." };
-    if (amount < 20000) return { success: false, error: "Minimum withdrawal is ₦20,000." };
-    if (amount > 50000) return { success: false, error: "Maximum withdrawal is ₦50,000." };
+    if (amount < 20000) return { success: false, error: "Please enter a higher amount." };
+    if (amount > 50000) return { success: false, error: "Please enter a lower amount." };
 
     const reference = `WD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const { data: withdrawal, error: withdrawalError } = await supabase.from("withdrawals").insert({

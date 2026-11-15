@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Lock as LockIcon, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus, X, Check
+  Lock as LockIcon, ArrowLeft, Users, Wallet, MessageSquare, Send, RefreshCw, Megaphone, UserPlus, X
 } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 

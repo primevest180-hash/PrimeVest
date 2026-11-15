@@ -4,7 +4,7 @@ import {
   ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Rocket,
   CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw, Terminal
 } from "lucide-react";
-import { supabase, api } from "./app"; // 🚨 Imported api for friends
+import { supabase, api } from "./app";
 
 const fmt = n => Math.floor(Number(n || 0)).toLocaleString("en-US");
 const panel = "rounded-[24px] border border-white/[0.07] bg-[#111827]/90 shadow-[0_12px_40px_rgba(0,0,0,.18)]";
@@ -16,7 +16,7 @@ const WALLET_ICONS = {
 export function HamsterGame() {
   const navigate = useNavigate();
   const [state, setState] = useState(null);
-  const [leaderboard, setLeaderboard] = useState([]); // Friends leaderboard
+  const [leaderboard, setLeaderboard] = useState([]);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [messageError, setMessageError] = useState(false);
@@ -31,28 +31,23 @@ export function HamsterGame() {
     setState(data);
   }, []);
 
-  // 🚨 FIX: Leaderboard now only shows friends
   const refreshLeaderboard = useCallback(async () => {
     setLoadingLeaderboard(true);
     try {
       const { data: friends } = await api.getFriends();
       const friendIds = friends.map(f => f.friend_id);
       
+      // Include self
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) friendIds.push(user.id);
+
       const { data: board } = await supabase
         .from('hamster_states')
         .select('user_id, coins, profiles(username, name)')
         .in('user_id', friendIds)
         .order('coins', { ascending: false });
 
-      // Add current user to their own leaderboard view
-      const { data: myState } = await supabase
-        .from('hamster_states')
-        .select('user_id, coins, profiles(username, name)')
-        .eq('user_id', (await supabase.auth.getUser()).data.user.id)
-        .single();
-
-      const finalBoard = myState ? [...(board || []), myState].sort((a,b) => b.coins - a.coins) : board;
-      setLeaderboard(finalBoard || []);
+      setLeaderboard(board || []);
     } catch (err) {
       console.error(err);
     }
@@ -129,10 +124,8 @@ export function HamsterGame() {
   }
 
   // 🚨 FIX: 1 Click = -100 Energy, 5 Taps = 1 HC
-  // The RPC function takes p_count. We pass 100 to drain 100 energy.
-  // You will need to update your Supabase `hamster_tap` function to ensure it handles this correctly.
   async function tapHamster() {
-    if (busy || isLocked || energy < 100) return; // Check if enough energy
+    if (busy || isLocked || energy < 100) return; 
     setTapEffect(v => v + 1);
     await run("hamster_tap", { p_count: 100 });
   }
@@ -208,8 +201,7 @@ export function HamsterGame() {
             <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
           </button>
           <div className="flex justify-center gap-2">
-            {/* 🚨 REMOVED the -20 Energy text */}
-            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / tap</span>
+            <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / 5 taps</span>
             {turboActive && <span className="rounded-full bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200"><Flame size={13} className="inline" /> TURBO</span>}
           </div>
         </section>
@@ -235,8 +227,8 @@ export function HamsterGame() {
                   <p className="mt-2 text-xs font-black text-amber-300">{fmt(u.cost)} HC</p>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <button onClick={() => run("hamster_upgrade", { p_kind: u.key })} disabled={!!busy} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-black">BUY HC</button>
-                  <button onClick={() => buyWithPaystack(u.key, u.paystack)} className="rounded-lg border border-white/20 px-4 py-1.5 text-[10px] font-black">PAY ₦{u.paystack}</button>
+                  {/* 🚨 REMOVED BUY HC BUTTON */}
+                  <button onClick={() => buyWithPaystack(u.key, u.paystack)} className="rounded-lg border border-white/20 px-4 py-2 text-[10px] font-black">PAY ₦{u.paystack}</button>
                 </div>
               </div>
             ))}
@@ -331,7 +323,6 @@ export function HamsterGame() {
           </div>
         </section>
 
-        {/* 🚨 FIX: Friends Leaderboard */}
         <section id="hamster-rank" className="hamster-scroll mt-7">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-black flex items-center gap-2"><Trophy size={20} /> Friends Leaderboard</h2>

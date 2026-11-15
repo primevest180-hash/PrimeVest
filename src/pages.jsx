@@ -421,8 +421,10 @@ export function Withdraw() {
   const next = () => {
     const n = Number(amount);
     if (!n || n <= 0) return setError("Enter a valid amount.");
-    // 🚨 SILENT LIMIT: Max 20,000
-    if (n > 20000) return setError("Please enter a lower amount.");
+    
+    // 🚨 SILENT WITHDRAWAL LIMITS
+    if (n < 20000) return setError("Please enter a higher amount.");
+    if (n > 50000) return setError("Please enter a lower amount.");
     if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
     window.location.href = `/withdraw/account?amount=${n}`;
   };
