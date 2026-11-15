@@ -13,9 +13,10 @@ import {
 import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Withdraw, WithdrawAccount, WithdrawSuccess, VIP, VIPCheckout, Invest,
+  Withdraw, WithdrawAccount, WithdrawSuccess, Invest,
   Portfolio, Settings, Help, History, ScratchCard, MysteryBox, Login, Signup
 } from "./pages";
+import { VIP, VIPCheckout } from "./VIP";
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
 import { HamsterGame } from "./HamsterGame";
@@ -562,7 +563,7 @@ function LandingPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Hard timeout: Force it to stop checking after 2 seconds
+    // Add a timeout so it doesn't hang forever
     const timeout = setTimeout(() => {
       setChecking(false);
     }, 2000);
@@ -570,9 +571,9 @@ function LandingPage() {
     supabase.auth.getSession().then(({ data }) => {
       clearTimeout(timeout);
       if (data.session) {
-        window.location.href = "/home"; 
+        window.location.href = "/home"; // If logged in, go to dashboard
       } else {
-        setChecking(false);
+        setChecking(false); // If not logged in, show the landing page
       }
     }).catch(() => {
       clearTimeout(timeout);
