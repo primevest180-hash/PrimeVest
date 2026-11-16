@@ -13,9 +13,9 @@ import {
 import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Withdraw, WithdrawAccount, WithdrawSuccess, Invest,
-  Portfolio, Settings, Help, History, ScratchCard, MysteryBox, Login, Signup
+  Invest, Portfolio, Settings, Help, History, ScratchCard, MysteryBox, Login, Signup
 } from "./pages";
+import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw"; // 🚨 IMPORTED HERE
 import { VIP, VIPCheckout } from "./VIP";
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
@@ -249,14 +249,15 @@ export const api = {
 
   depositInit: (amount, method, email, vip, type) => call("index", { action: "deposit", amount, method, email, vip, type }),
 
+  // 🚨 THE WITHDRAWAL API (Now with silent 50k limit)
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Please log in first." };
     const amount = Number(p.amount);
     
-    // 🚨 SILENT WITHDRAWAL LIMITS: Min 20k, Max 50k
     if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Enter a valid withdrawal amount." };
-    if (amount < 20000) return { success: false, error: "Please enter a higher amount." };
+    
+    // 🚨 SILENT LIMIT ENFORCEMENT
     if (amount > 50000) return { success: false, error: "Please enter a lower amount." };
 
     const reference = `WD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
