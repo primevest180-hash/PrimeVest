@@ -111,7 +111,7 @@ export const api = {
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
     const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },

@@ -137,11 +137,11 @@ export function HamsterGame() {
     document.getElementById(`hamster-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // 🚨 FIX: Forces the database to drain 100 energy and give 1 HC (5 taps = 1 HC)
+  // 🚨 FIX: Forces the database to drain 50 energy and give 1 HC (5 taps = 1 HC)
   async function tapHamster() {
-    if (busy || isLocked || energy < 100) return; 
+    if (busy || isLocked || energy < 50) return; 
     setTapEffect(v => v + 1);
-    await run("hamster_tap", { p_count: 100 });
+    await run("hamster_tap", { p_count: 50 });
   }
 
   return (
@@ -210,7 +210,7 @@ export function HamsterGame() {
 
         <section id="hamster-game" className="hamster-scroll relative mt-5 overflow-hidden rounded-[30px] border border-amber-300/10 bg-[#172238] px-4 pb-6 pt-6 text-center">
           <h2 className="mt-2 text-xl font-black">Tap to earn</h2>
-          <button type="button" disabled={!!busy || isLocked || energy < 100} onClick={tapHamster}
+          <button type="button" disabled={!!busy || isLocked || energy < 50} onClick={tapHamster}
             className="coin-pulse relative mx-auto my-7 flex h-60 w-60 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_25%,#FFE9A6,#F6B83D_45%,#B85A18_100%)] text-[112px] active:scale-90 disabled:opacity-50">
             <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
           </button>
