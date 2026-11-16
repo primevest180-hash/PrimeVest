@@ -699,7 +699,7 @@ function HomePage() {
         setUnreadSupport(prev => prev + 1);
       }).subscribe();
 
-      // 🚨 FIX: Listen for VIP / Profile updates
+      // 🚨 FIX: Listen for VIP / Profile updates (Instant Revert)
       profileChannel = supabase.channel(`profile-updates-${user.id}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, (payload) => {
         setProfile(payload.new);
       }).subscribe();
@@ -725,8 +725,7 @@ function HomePage() {
   const money = (n) => { const v = Math.max(0, Number(n) || 0); if (isUsd) return `$${(v / 1500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; return `₦${v.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; };
   const isVip = profile.vip_tier && profile.vip_tier !== "None";
   
-  // 🚨 FIX: Correctly calculate the invested amount
-  const invested = investments.filter(i => i.status === "active").reduce((s, i) => s + Number(i.amount), 0);
+  const invested = investments.reduce((s, i) => s + Number(i.amount), 0);
   const canClaim = !profile.last_login_claim || Date.now() - new Date(profile.last_login_claim).getTime() >= 86400000;
 
   async function claimDaily() { const r = await api.claimDailyLogin(); if (r.error) return setToastMsg(r.error); setToastMsg("₦100 claimed!"); loadData(); }

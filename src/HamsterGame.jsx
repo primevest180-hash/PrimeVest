@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Coins, Zap, TrendingUp, Gift, Trophy, Rocket,
-  CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw, Terminal
+  CheckCircle2, Flame, Sparkles, Shield, Gamepad2, Wallet, RefreshCw, Terminal, Clock
 } from "lucide-react";
 import { supabase, api } from "./app";
 
@@ -37,11 +37,9 @@ export function HamsterGame() {
       const { data: friends } = await api.getFriends();
       const friendIds = friends.map(f => f.friend_id);
       
-      // Include self
       const { data: { user } } = await supabase.auth.getUser();
       if (user) friendIds.push(user.id);
 
-      // 🚨 FIXED: Querying "hamster_game" instead of "hamster_states"
       const { data: board } = await supabase
         .from('hamster_game')
         .select('user_id, coins, profiles(username, name)')
@@ -62,13 +60,10 @@ export function HamsterGame() {
     const timer = setInterval(() => {
       setNow(Date.now());
       
-      // Check if 1 hour has passed since last energy update
       if (state?.last_energy_at) {
         const timeDiff = Date.now() - new Date(state.last_energy_at).getTime();
-        if (timeDiff >= 3600000) { // 3600000 ms = 1 hour
-           // You would call a Supabase RPC here to refill energy
-           // For now, it just updates the UI state
-           setState(prev => ({ ...prev, energy: prev.max_energy }));
+        if (timeDiff >= 3600000) { 
+           setState(prev => ({ ...prev, energy: prev.max_energy, lockout_until: null }));
         }
       }
     }, 1000);
@@ -137,9 +132,16 @@ export function HamsterGame() {
     document.getElementById(`hamster-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // 🚨 FIX: Forces the database to drain 50 energy and give 1 HC (5 taps = 1 HC)
+  // 🚨 UPGRADED TAP LOGIC: Force 0 energy if less than 50
   async function tapHamster() {
-    if (busy || isLocked || energy < 50) return; 
+    if (busy || isLocked) return; 
+    
+    if (energy < 50) {
+      // Force to 0 and lockout
+      await run("hamster_tap_empty");
+      return;
+    }
+    
     setTapEffect(v => v + 1);
     await run("hamster_tap", { p_count: 50 });
   }
@@ -201,19 +203,26 @@ export function HamsterGame() {
           <div className="h-3 overflow-hidden rounded-full bg-[#263044]">
             <div className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-emerald-400" style={{ width: `${energyPct}%` }} />
           </div>
-          {isLocked && (
-            <p className="mt-3 text-center text-xs font-bold text-red-400">
-              Game locked! Energy refills in {lockoutTime}
-            </p>
-          )}
         </section>
 
         <section id="hamster-game" className="hamster-scroll relative mt-5 overflow-hidden rounded-[30px] border border-amber-300/10 bg-[#172238] px-4 pb-6 pt-6 text-center">
           <h2 className="mt-2 text-xl font-black">Tap to earn</h2>
-          <button type="button" disabled={!!busy || isLocked || energy < 50} onClick={tapHamster}
+          
+          <button type="button" disabled={!!busy} onClick={tapHamster}
             className="coin-pulse relative mx-auto my-7 flex h-60 w-60 items-center justify-center rounded-full bg-[radial-gradient(circle_at_35%_25%,#FFE9A6,#F6B83D_45%,#B85A18_100%)] text-[112px] active:scale-90 disabled:opacity-50">
-            <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
+            
+            {/* 🚨 LOCKOUT UI ON THE CIRCLE */}
+            {isLocked ? (
+              <div className="flex flex-col items-center justify-center text-white">
+                <Clock size={40} className="mb-2" />
+                <p className="text-sm font-bold">Recharging</p>
+                <p className="text-lg font-black">{lockoutTime}</p>
+              </div>
+            ) : (
+              <span key={tapEffect} className="hamster-float drop-shadow-lg"><Wallet size={96} className="text-white" /></span>
+            )}
           </button>
+
           <div className="flex justify-center gap-2">
             <span className="rounded-full bg-amber-300/10 px-4 py-2 text-sm font-black text-amber-200">+{tapPower.toFixed(1)} HC / 5 taps</span>
             {turboActive && <span className="rounded-full bg-purple-400/10 px-3 py-2 text-xs font-black text-purple-200"><Flame size={13} className="inline" /> TURBO</span>}
@@ -241,7 +250,6 @@ export function HamsterGame() {
                   <p className="mt-2 text-xs font-black text-amber-300">{fmt(u.cost)} HC</p>
                 </div>
                 <div className="flex flex-col gap-1">
-                  {/* REMOVED BUY HC BUTTON */}
                   <button onClick={() => buyWithPaystack(u.key, u.paystack)} className="rounded-lg border border-white/20 px-4 py-2 text-[10px] font-black">PAY ₦{u.paystack}</button>
                 </div>
               </div>
