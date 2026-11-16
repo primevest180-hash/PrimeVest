@@ -55,12 +55,25 @@ export function HamsterGame() {
     setLoadingLeaderboard(false);
   }, []);
 
+  // 🚨 1-HOUR ENERGY REFILL TIMER
   useEffect(() => {
     refreshState();
     refreshLeaderboard();
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      
+      // Check if 1 hour has passed since last energy update
+      if (state?.last_energy_at) {
+        const timeDiff = Date.now() - new Date(state.last_energy_at).getTime();
+        if (timeDiff >= 3600000) { // 3600000 ms = 1 hour
+           // You would call a Supabase RPC here to refill energy
+           // For now, it just updates the UI state
+           setState(prev => ({ ...prev, energy: prev.max_energy }));
+        }
+      }
+    }, 1000);
     return () => clearInterval(timer);
-  }, [refreshState, refreshLeaderboard]);
+  }, [refreshState, refreshLeaderboard, state?.last_energy_at]);
 
   async function run(action, args = {}) {
     if (busy) return;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Menu, Send, ShieldCheck, User } from "lucide-react";
+import { ArrowLeft, Menu, Send, ShieldCheck, User, Trash2, Edit2, Copy } from "lucide-react";
 import { api, supabase, ADMIN_UUID } from "./app";
 
 export function Chat() {
@@ -21,6 +21,10 @@ export function Chat() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState({});
   const messagesEndRef = useRef(null);
+
+  // Edit state
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { scrollToBottom(); }, [messages]);
@@ -68,6 +72,7 @@ export function Chat() {
     loadMessages(targetId);
     setUnreadCounts(prev => ({ ...prev, [targetId]: 0 }));
 
+    // Realtime listeners (Admin)
     const adminChannel = supabase.channel('chat-admin')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_messages' }, (payload) => {
         const m = payload.new;
@@ -82,8 +87,16 @@ export function Chat() {
             if (m.receiver_id === profile.id) setUnreadCounts(prev => ({ ...prev, admin: (prev.admin || 0) + 1 }));
           }
         }
-      }).subscribe();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'admin_messages' }, (payload) => {
+        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'admin_messages' }, (payload) => {
+        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+      })
+      .subscribe();
 
+    // Realtime listeners (Private)
     const privateChannel = supabase.channel('chat-private')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_messages' }, (payload) => {
         const m = payload.new;
@@ -98,7 +111,14 @@ export function Chat() {
             setUnreadCounts(prev => ({ ...prev, [sender]: (prev[sender] || 0) + 1 }));
           }
         }
-      }).subscribe();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'private_messages' }, (payload) => {
+        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'private_messages' }, (payload) => {
+        setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+      })
+      .subscribe();
 
     return () => { 
       supabase.removeChannel(adminChannel); 
@@ -119,7 +139,7 @@ export function Chat() {
           message: newMsg.trim(),
           read: false
         });
-        if (error) throw error;
+        if (error) throw error; 
       } else {
         const { error } = await supabase.from("private_messages").insert({
           sender_id: profile.id,
@@ -131,10 +151,32 @@ export function Chat() {
       }
       setNewMsg("");
     } catch (err) {
-      alert("Send failed: " + err.message);
+      alert("Message failed to send: " + err.message);
     } finally {
       setSending(false);
     }
+  }
+
+  // 🚨 DELETE MESSAGE
+  async function deleteMessage(id) {
+    if (!confirm("Delete this message?")) return;
+    if (targetId === "admin") {
+      await supabase.from("admin_messages").delete().eq("id", id);
+    } else {
+      await supabase.from("private_messages").delete().eq("id", id);
+    }
+  }
+
+  // 🚨 EDIT MESSAGE
+  async function saveEdit(id) {
+    if (!editText.trim()) return;
+    if (targetId === "admin") {
+      await supabase.from("admin_messages").update({ message: editText.trim() }).eq("id", id);
+    } else {
+      await supabase.from("private_messages").update({ message: editText.trim() }).eq("id", id);
+    }
+    setEditingId(null);
+    setEditText("");
   }
 
   const selectChat = (mode, id, name) => {
@@ -214,9 +256,28 @@ export function Chat() {
                 : messages.map(m => {
                     const isMe = m.sender_id === profile.id;
                     return (
-                      <div key={m.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                        <div className={`p-3 rounded-2xl max-w-[85%] md:max-w-[80%] ${isMe ? "bg-blue-600 text-white rounded-tr-sm" : "bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm"}`}>
-                          <p className="text-sm break-words">{m.message}</p>
+                      <div key={m.id} className={`group flex ${isMe ? "justify-end" : "justify-start"} relative`}>
+                        <div className={`p-3 rounded-2xl max-w-[85%] md:max-w-[80%] relative ${isMe ? "bg-blue-600 text-white rounded-tr-sm" : "bg-[#0D1526] border border-white/10 text-slate-200 rounded-tl-sm"}`}>
+                          
+                          {/* 🚨 MESSAGE ACTIONS (Hover) */}
+                          <div className="absolute -top-3 right-2 hidden group-hover:flex bg-[#0D1526] border border-white/10 rounded-lg overflow-hidden shadow-lg z-10">
+                            <button onClick={() => { setEditingId(m.id); setEditText(m.message); }} className="p-1.5 hover:bg-white/10 text-blue-400"><Edit2 size={14} /></button>
+                            <button onClick={() => { navigator.clipboard.writeText(m.message); }} className="p-1.5 hover:bg-white/10 text-amber-400"><Copy size={14} /></button>
+                            <button onClick={() => deleteMessage(m.id)} className="p-1.5 hover:bg-white/10 text-red-400"><Trash2 size={14} /></button>
+                          </div>
+
+                          {editingId === m.id ? (
+                            <div className="flex flex-col gap-2">
+                              <input value={editText} onChange={e => setEditText(e.target.value)} className="w-full bg-black/40 text-white p-2 rounded-lg outline-none" />
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 bg-slate-700 rounded">Cancel</button>
+                                <button onClick={() => saveEdit(m.id)} className="text-xs px-2 py-1 bg-emerald-600 rounded">Save</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm break-words">{m.message}</p>
+                          )}
+
                           <p className="text-[10px] opacity-60 mt-1 text-right">
                             {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                           </p>

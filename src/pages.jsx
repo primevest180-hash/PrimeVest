@@ -410,189 +410,7 @@ export function DepositBitcoin() {
   );
 }
 
-/* =========================== WITHDRAW =========================== */
-export function Withdraw() {
-  const [amount, setAmount] = useState("");
-  const [error, setError] = useState("");
-  const [balance, setBalance] = useState(0);
-
-  useEffect(() => { api.wallet().then(({ data }) => data && setBalance(data.available)); }, []);
-
-  const next = () => {
-    const n = Number(amount);
-    if (!n || n <= 0) return setError("Enter a valid amount.");
-    
-    // 🚨 SILENT WITHDRAWAL LIMITS
-    if (n < 20000) return setError("Please enter a higher amount.");
-    if (n > 50000) return setError("Please enter a lower amount.");
-    if (n > balance) return setError(`Insufficient. Available ₦${balance.toLocaleString()}`);
-    window.location.href = `/withdraw/account?amount=${n}`;
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-950 pb-24 text-white">
-      <header className="border-b border-blue-400/10 bg-slate-950/95">
-        <div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4">
-          <a href="/home" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
-            <ArrowLeft className="h-5 w-5" />
-          </a>
-          <h1 className="text-xl font-bold">Withdraw</h1>
-        </div>
-      </header>
-      <main className="mx-auto max-w-2xl px-4 py-10">
-        <div className="rounded-2xl border border-blue-400/10 bg-blue-950/30 p-5">
-          <p className="text-sm text-slate-400">Available</p>
-          <p className="mt-1 text-2xl font-bold text-blue-400">₦{balance.toLocaleString()}</p>
-        </div>
-        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <label className="mb-2 block text-sm">Amount</label>
-          <div className="flex rounded-xl border border-blue-400/10 bg-slate-950">
-            <span className="flex items-center px-4 text-slate-400">₦</span>
-            <input value={amount}
-              onChange={e => { if (/^\d*\.?\d*$/.test(e.target.value)) { setAmount(e.target.value); setError(""); } }}
-              placeholder="Enter amount" className="w-full bg-transparent px-2 py-4 outline-none" />
-          </div>
-          {error && <p className="mt-4 rounded-xl bg-red-500/5 p-3 text-sm text-red-300">{error}</p>}
-          <button onClick={next} className="mt-6 w-full rounded-xl bg-blue-600 py-4 font-semibold">Continue</button>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-export function WithdrawAccount() {
-  const [bankName, setBankName] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [accountName, setAccountName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [showPopup, setShowPopup] = useState(false);
-  const [error, setError] = useState("");
-
-  const params = new URLSearchParams(window.location.search);
-  const amount = Number(params.get("amount") || 0);
-  const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
-
-  async function proceed() {
-    if (!bankName || !accountNumber || !accountName) return setError("Fill all fields.");
-    if (accountNumber.length !== 10) return setError("Account number must be 10 digits.");
-    
-    setSubmitting(true); setError("");
-    
-    const r = await api.withdraw({ amount, bank_name: bankName, account_number: accountNumber, account_name: accountName });
-    
-    setSubmitting(false);
-    if (r?.success) setShowPopup(true);
-    else setError(r?.error || "Failed.");
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-950 pb-24 text-white">
-      <header className="border-b border-blue-400/10 bg-slate-950/95">
-        <div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4">
-          <a href="/withdraw" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
-            <ArrowLeft className="h-5 w-5" />
-          </a>
-          <h1 className="text-xl font-bold">Withdrawal Details</h1>
-        </div>
-      </header>
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <div className="rounded-3xl bg-gradient-to-br from-blue-950 to-blue-700 p-6 text-center">
-          <p className="text-sm text-blue-200">Amount</p>
-          <h2 className="mt-2 text-4xl font-bold">₦{fmt}</h2>
-        </div>
-        <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <div className="mb-4">
-            <label className="mb-2 block text-sm font-medium">Bank Name</label>
-            <input value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. GTBank"
-              className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none" />
-          </div>
-          <div className="mb-4">
-            <label className="mb-2 block text-sm font-medium">Account Number</label>
-            <input value={accountNumber}
-              onChange={e => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
-              placeholder="10 digits"
-              className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none" />
-          </div>
-          <div className="mb-6">
-            <label className="mb-2 block text-sm font-medium">Account Name</label>
-            <input value={accountName} onChange={e => setAccountName(e.target.value)} placeholder="Full name"
-              className="w-full rounded-xl border border-blue-400/10 bg-slate-950 px-4 py-4 text-sm outline-none" />
-          </div>
-          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-          <button onClick={proceed} disabled={submitting}
-            className="w-full rounded-xl bg-emerald-600 py-4 font-bold disabled:opacity-40">
-            {submitting ? "Processing..." : "Confirm Withdrawal"}
-          </button>
-        </div>
-      </main>
-
-      {showPopup && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-sm rounded-3xl border border-emerald-500/30 bg-[#0D1526] p-8 text-center">
-            <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-4" />
-            <h3 className="text-2xl font-bold mb-2">Request Submitted</h3>
-            <p className="text-sm text-slate-300 mb-6">Processed within 3 hours.</p>
-            <button onClick={() => window.location.href = `/withdraw/success?amount=${amount}&bank=${encodeURIComponent(bankName)}&accountName=${encodeURIComponent(accountName)}`}
-              className="w-full rounded-xl bg-blue-600 py-3 font-semibold">
-              View Receipt
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function WithdrawSuccess() {
-  const p = new URLSearchParams(window.location.search);
-  const amount = p.get("amount") || "0";
-  const bank = p.get("bank") || "Bank";
-  const accountName = p.get("accountName") || "";
-  const fmt = Number(amount).toLocaleString("en-NG", { minimumFractionDigits: 2 });
-  const [timeLeft, setTimeLeft] = useState("3h 0m 0s");
-
-  useEffect(() => {
-    const end = Date.now() + 3 * 60 * 60 * 1000;
-    const tick = () => {
-      const diff = end - Date.now();
-      if (diff <= 0) setTimeLeft("Processing...");
-      else {
-        const h = Math.floor(diff / 3600000);
-        const m = Math.floor((diff % 3600000) / 60000);
-        const s = Math.floor((diff % 60000) / 1000);
-        setTimeLeft(`${h}h ${m}m ${s}s`);
-      }
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4 text-white">
-      <div className="w-full max-w-md rounded-3xl border border-amber-500/30 bg-gradient-to-b from-[#2A1D00] to-[#0A0A0A] p-8 text-center">
-        <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-amber-500/10 mb-6">
-          <Clock className="h-12 w-12 text-amber-400" />
-        </div>
-        <p className="text-sm font-bold uppercase text-amber-400">Transfer Pending</p>
-        <h1 className="mt-2 text-4xl font-extrabold">{`₦${fmt}`}</h1>
-        <div className="mt-6 rounded-xl bg-black/40 p-4 text-sm">
-          <p className="text-slate-400">To: <span className="text-white">{accountName}</span></p>
-          <p className="text-slate-400">Bank: <span className="text-white">{bank}</span></p>
-        </div>
-        <div className="mt-8 rounded-xl bg-amber-500/10 p-4">
-          <p className="text-xs text-amber-200">Time Remaining</p>
-          <p className="text-2xl font-mono font-bold text-amber-400">{timeLeft}</p>
-        </div>
-        <a href="/home" className="mt-8 inline-flex rounded-xl bg-white text-black px-6 py-3 font-bold">Back</a>
-      </div>
-    </div>
-  );
-}
-
-/* =========================== VIP / INVEST =========================== */
-// Note: The VIP component is in a separate file (VIP.jsx) now.
-
+/* =========================== INVEST =========================== */
 export function Invest() {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -810,59 +628,6 @@ export function BonusGame() {
   );
 }
 
-/* =========================== SCRATCH / MYSTERY =========================== */
-export function ScratchCard() {
-  const [loading, setLoading] = useState(false);
-  async function buy() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const r = await api.depositInit(1000, "card", user.email, false, "scratch");
-    setLoading(false);
-    const url = r?.authorization_url || r?.url;
-    if (url) window.location.href = url;
-  }
-  return (
-    <div className="min-h-screen bg-[#070D1A] p-6 text-white flex flex-col items-center justify-center">
-      <div className="w-full max-w-sm rounded-3xl border border-emerald-500/30 bg-[#0D1526] p-8 text-center">
-        <Gift className="h-16 w-16 text-emerald-400 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Scratch & Win</h1>
-        <p className="text-slate-400 text-sm mb-6">Pay ₦1,000 for a chance to win big!</p>
-        <button onClick={buy} disabled={loading}
-          className="w-full rounded-xl bg-emerald-600 py-4 font-bold disabled:opacity-50">
-          {loading ? "Redirecting..." : "Buy for ₦1,000"}
-        </button>
-        <a href="/home" className="mt-6 block text-sm text-slate-400">Back</a>
-      </div>
-    </div>
-  );
-}
-
-export function MysteryBox() {
-  const [loading, setLoading] = useState(false);
-  async function buy() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const r = await api.depositInit(5000, "card", user.email, false, "mystery");
-    setLoading(false);
-    const url = r?.authorization_url || r?.url;
-    if (url) window.location.href = url;
-  }
-  return (
-    <div className="min-h-screen bg-[#070D1A] p-6 text-white flex flex-col items-center justify-center">
-      <div className="w-full max-w-sm rounded-3xl border border-purple-500/30 bg-[#0D1526] p-8 text-center">
-        <Zap className="h-16 w-16 text-purple-400 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Mystery Box</h1>
-        <p className="text-slate-400 text-sm mb-6">Pay ₦5,000 for a chance to win VIP or cash!</p>
-        <button onClick={buy} disabled={loading}
-          className="w-full rounded-xl bg-purple-600 py-4 font-bold disabled:opacity-50">
-          {loading ? "Redirecting..." : "Buy for ₦5,000"}
-        </button>
-        <a href="/home" className="mt-6 block text-sm text-slate-400">Back</a>
-      </div>
-    </div>
-  );
-}
-
 /* =========================== PORTFOLIO / HISTORY =========================== */
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
@@ -986,7 +751,7 @@ export function History() {
   );
 }
 
-/* =========================== SETTINGS (PAID USERNAME CHANGE) =========================== */
+/* =========================== SETTINGS =========================== */
 export function Settings() {
   const [profile, setProfile] = useState({ name: "", email: "", avatar_url: "", username: "" });
   const [uploading, setUploading] = useState(false);
@@ -1013,13 +778,28 @@ export function Settings() {
 
   useEffect(() => {
     reload();
-    // 🚨 FIX: Only fetch if status is STILL pending, otherwise clear it
-    supabase.from("withdrawals").select("*").eq("status", "pending")
-      .order("created_at", { ascending: false }).limit(1)
-      .then(({ data }) => { 
-        if (data?.length) setPendingWD(data[0]); 
-        else setPendingWD(null); 
-      });
+    
+    // 🚨 FIX: Only fetch the pending withdrawal for the CURRENT logged-in user
+    const fetchPending = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase.from("withdrawals")
+        .select("*")
+        .eq("status", "pending")
+        .eq("user_id", user.id) // <--- This line is the fix
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setPendingWD(data[0]); 
+      } else {
+        setPendingWD(null); 
+      }
+    };
+
+    fetchPending();
+    
     const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
@@ -1166,6 +946,7 @@ export function Settings() {
           </div>
         )}
 
+        {/* 🚨 WITHDRAWAL PENDING (Now only shows if user has a pending withdrawal) */}
         {pendingWD && (
           <div className="rounded-2xl border border-amber-500/30 bg-[#1A1500] p-5">
             <div className="flex items-center gap-3 mb-2">

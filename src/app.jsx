@@ -13,9 +13,10 @@ import {
 import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Invest, Portfolio, Settings, Help, History, ScratchCard, MysteryBox, Login, Signup
+  Invest, Portfolio, Settings, Help, History, Login, Signup
 } from "./pages";
-import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw"; // 🚨 IMPORTED HERE
+import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw";
+import { ScratchCard, MysteryBox } from "./scratch_mystery";
 import { VIP, VIPCheckout } from "./VIP";
 import { Chat } from "./chat";
 import { AdminDashboard } from "./admin";
@@ -110,7 +111,7 @@ export const api = {
     const fileName = `${userId}-${Math.random()}.${fileExt}`;
     const { error } = await supabase.storage.from("avatars").upload(fileName, file);
     if (error) throw error;
-    const { data } = await supabase.storage.from("avatars").getPublicUrl(fileName);
+    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
     return data.publicUrl;
   },
@@ -249,16 +250,13 @@ export const api = {
 
   depositInit: (amount, method, email, vip, type) => call("index", { action: "deposit", amount, method, email, vip, type }),
 
-  // 🚨 THE WITHDRAWAL API (Now with silent 50k limit)
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Please log in first." };
     const amount = Number(p.amount);
     
     if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Enter a valid withdrawal amount." };
-    
-    // 🚨 SILENT LIMIT ENFORCEMENT
-    if (amount > 50000) return { success: false, error: "Please enter a lower amount." };
+    if (amount > 50000) return { success: false, error: "Please enter a lower amount." }; // 🚨 SILENT 50k LIMIT
 
     const reference = `WD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const { data: withdrawal, error: withdrawalError } = await supabase.from("withdrawals").insert({
@@ -615,11 +613,8 @@ function HomePage() {
   const [referralStatus, setReferralStatus] = useState("");
   const [, setTick] = useState(0);
   
-  // 🚨 Gold Announcement State
   const [globalAnnouncement, setGlobalAnnouncement] = useState(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
-  
-  // 🚨 Unread Support Messages
   const [unreadSupport, setUnreadSupport] = useState(0);
 
   const loadData = async () => {
@@ -630,7 +625,6 @@ function HomePage() {
     }
 
     try {
-      // 1. Wallet
       let { data: w } = await supabase.from("wallets").select("*").eq("user_id", user.id).single();
       if (!w) {
         await supabase.from("wallets").insert({ user_id: user.id, available: 0, total: 0, invested: 0, earnings: 0 });
@@ -638,7 +632,6 @@ function HomePage() {
         w = r.data;
       }
 
-      // 2. Profile & other data
       const p = await api.profile();
       const i = await api.portfolio();
       const n = await api.notifications();
@@ -649,21 +642,18 @@ function HomePage() {
         referralData = refRes.data;
       } catch (e) {}
       
-      // 3. Announcement
       let announcementData = null;
       try {
         const res = await supabase.from('global_announcements').select('message, active').eq('id', 1).single();
         announcementData = res.data;
       } catch (err) {}
 
-      // 4. Unread Support Messages
       const { count } = await supabase.from('admin_messages')
         .select('*', { count: 'exact', head: true })
         .eq('receiver_id', user.id)
         .eq('read', false);
       setUnreadSupport(count || 0);
 
-      // 5. Set State
       if (w) setWallet(w);
       if (p.data) setProfile({ ...p.data, referral_code: referralData || p.data.referral_code || "" });
       if (i.data) setInvestments(i.data);
@@ -696,7 +686,7 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
-    let walletChannel; let notificationChannel; let supportChannel;
+    let walletChannel; let notificationChannel; let supportChannel; let profileChannel;
     const setupRealtime = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -708,12 +698,18 @@ function HomePage() {
       supportChannel = supabase.channel(`support-updates-${user.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "admin_messages", filter: `receiver_id=eq.${user.id}` }, (payload) => {
         setUnreadSupport(prev => prev + 1);
       }).subscribe();
+
+      // 🚨 FIX: Listen for VIP / Profile updates
+      profileChannel = supabase.channel(`profile-updates-${user.id}`).on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, (payload) => {
+        setProfile(payload.new);
+      }).subscribe();
     };
     setupRealtime();
     return () => { 
       if (walletChannel) supabase.removeChannel(walletChannel); 
       if (notificationChannel) supabase.removeChannel(notificationChannel); 
       if (supportChannel) supabase.removeChannel(supportChannel);
+      if (profileChannel) supabase.removeChannel(profileChannel);
     };
   }, []);
 
@@ -728,6 +724,8 @@ function HomePage() {
 
   const money = (n) => { const v = Math.max(0, Number(n) || 0); if (isUsd) return `$${(v / 1500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; return `₦${v.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; };
   const isVip = profile.vip_tier && profile.vip_tier !== "None";
+  
+  // 🚨 FIX: Correctly calculate the invested amount
   const invested = investments.filter(i => i.status === "active").reduce((s, i) => s + Number(i.amount), 0);
   const canClaim = !profile.last_login_claim || Date.now() - new Date(profile.last_login_claim).getTime() >= 86400000;
 
@@ -739,7 +737,6 @@ function HomePage() {
   async function handleReferClick() {
     setReferralStatus("");
     setReferralOpen(true);
-    // 🚨 Log the refer click to database
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       await supabase.from('profiles').update({ last_refer_click: new Date().toISOString() }).eq('id', user.id);
@@ -752,7 +749,6 @@ function HomePage() {
     <div className={`min-h-screen pb-28 text-white ${isVip ? "bg-[#140F00]" : "bg-[#070D1A]"}`}>
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
       
-      {/* 🚨 GOLD ANNOUNCEMENT BANNER */}
       {globalAnnouncement && showAnnouncement && (
         <div className="bg-amber-500 text-black text-center p-3 text-sm font-bold relative flex items-center justify-between">
           <div className="flex items-center justify-center gap-2 max-w-7xl mx-auto px-6">
