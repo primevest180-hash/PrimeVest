@@ -13,9 +13,9 @@ import {
 import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Portfolio, Settings, Help, History, Login, Signup
+  Invest, Portfolio, Settings, Help, History, Login, Signup
 } from "./pages";
-import { Invest, TradingSimulator, AffiliateDashboard } from "./investment";
+import { TradingSimulator, AffiliateDashboard } from "./investment"; // 🚨 ADDED THIS IMPORT
 import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw";
 import { ScratchCard, MysteryBox } from "./scratch_mystery";
 import { VIP, VIPCheckout } from "./VIP";
@@ -281,56 +281,28 @@ export const api = {
     return { success: true, withdrawal_id: withdrawal.id, reference };
   },
 
-  claimBonus: async (amount) => {
+  claimBonus: async () => ({ success: false, error: "Bonus claiming is temporarily unavailable while secure server-side reward settlement is configured." }),
+
+  invest: async (plan_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Not logged in." };
-    await supabase.from("transactions").insert({ user_id: user.id, type: "bonus", amount, status: "success", reference: `BONUS-${Date.now()}` });
-    const { data: w } = await supabase.from("wallets").select("available, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({ available: (w?.available || 0) + amount, total: (w?.total || 0) + amount }).eq("user_id", user.id);
-    return { success: true };
+    return call("index", { action: "invest", plan_id, amount });
   },
 
-  invest: async (plan_id, amount, daily_profit, matured_at) => {
+  // Payouts are settled only by the server after the recorded maturity timestamp.
+  claimInvestment: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Not logged in." };
-    return call("index", { action: "invest", plan_id, amount, daily_profit, matured_at, email: user.email });
+    return call("index", { action: "settle_matured" });
   },
 
-  claimInvestment: async (investment_id, amount) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Not logged in." };
-    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
-    if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
-      return { success: false, error: "You can only claim once every 24 hours." };
-    }
-    const now = new Date().toISOString();
-    await supabase.from("investments").update({ last_daily_claim: now }).eq("id", investment_id);
-    const { data: w } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({
-      available: (w?.available || 0) + amount, earnings: (w?.earnings || 0) + amount, total: (w?.total || 0) + amount,
-    }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({
-      user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}`,
-    });
-    return { success: true };
+  reviewStake: async (investment_id, decision, reason = "") => {
+    return call("index", { action: "review_stake", investment_id, decision, reason });
   },
 
-  claimDailyLogin: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: "Not logged in." };
-    const { data: p } = await supabase.from("profiles").select("last_login_claim").eq("id", user.id).single();
-    const now = new Date();
-    if (p?.last_login_claim && now.getTime() - new Date(p.last_login_claim).getTime() < 86400000) return { error: "Already claimed." };
-    await supabase.from("profiles").update({ last_login_claim: now.toISOString() }).eq("id", user.id);
-    const { data: w } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({
-      available: (w?.available || 0) + 100, earnings: (w?.earnings || 0) + 100, total: (w?.total || 0) + 100,
-    }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({
-      user_id: user.id, type: "daily_login", amount: 100, status: "success", reference: `LOGIN-${Date.now()}`,
-    });
-    return { success: true };
-  },
+  getAdminPendingStakes: async () => call("index", { action: "get_pending_stakes" }),
+
+  claimDailyLogin: async () => ({ error: "Daily login rewards are temporarily unavailable while secure server-side reward settlement is configured." }),
 
   rewardReferral: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -354,22 +326,9 @@ export const api = {
   getAllUsers: async () => supabase.from("profiles").select("*").neq("id", ADMIN_UUID).order("created_at", { ascending: false }),
   getAdminVault: async () => supabase.from("admin_vault").select("*").order("created_at", { ascending: false }),
 
-  getAdminAffiliateSubmissions: async () => supabase.from("affiliate_submissions").select("id,user_id,proof_path,status,reward_amount,admin_note,created_at").eq("status", "pending").order("created_at", { ascending: true }),
-
-  reviewAffiliateSubmission: async (submissionId, decision, rewardAmount = 0, note = "") => {
-    const { data, error } = await supabase.rpc("admin_review_affiliate_submission", {
-      p_submission_id: submissionId, p_decision: decision, p_reward_amount: Number(rewardAmount) || 0, p_admin_note: note,
-    });
-    if (error) return { success: false, error: error.message };
-    if (!data?.success) return { success: false, error: data?.error || "Review could not be completed." };
-    return { success: true, data };
-  },
-
   toggleUserFreeze: async (userId, currentStatus) => {
     const next = currentStatus === "frozen" ? "active" : "frozen";
-    const { error } = await supabase.from("profiles").update({ account_status: next }).eq("id", userId);
-    if (error) return { error: error.message };
-    return { success: true };
+    return call("index", { action: "toggle_user_status", user_id: userId, status: next });
   },
 
   getAdminWithdrawals: async () => supabase.from("withdrawals").select("*").eq("status", "pending").order("created_at", { ascending: false }),
