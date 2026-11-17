@@ -249,7 +249,7 @@ export const api = {
     return supabase.from("transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
   },
 
-  cardDepositInit: (amount, email) => call("index", { action: "deposit", amount, method: "card", email }),
+  depositInit: (amount, method, email, vip, type) => call("index", { action: "deposit", amount, method, email, vip, type }),
 
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -353,6 +353,17 @@ export const api = {
 
   getAllUsers: async () => supabase.from("profiles").select("*").neq("id", ADMIN_UUID).order("created_at", { ascending: false }),
   getAdminVault: async () => supabase.from("admin_vault").select("*").order("created_at", { ascending: false }),
+
+  getAdminAffiliateSubmissions: async () => supabase.from("affiliate_submissions").select("id,user_id,proof_path,status,reward_amount,admin_note,created_at").eq("status", "pending").order("created_at", { ascending: true }),
+
+  reviewAffiliateSubmission: async (submissionId, decision, rewardAmount = 0, note = "") => {
+    const { data, error } = await supabase.rpc("admin_review_affiliate_submission", {
+      p_submission_id: submissionId, p_decision: decision, p_reward_amount: Number(rewardAmount) || 0, p_admin_note: note,
+    });
+    if (error) return { success: false, error: error.message };
+    if (!data?.success) return { success: false, error: data?.error || "Review could not be completed." };
+    return { success: true, data };
+  },
 
   toggleUserFreeze: async (userId, currentStatus) => {
     const next = currentStatus === "frozen" ? "active" : "frozen";

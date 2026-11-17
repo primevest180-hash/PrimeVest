@@ -326,7 +326,7 @@ export function DepositCard() {
   async function pay() {
     setLoading(true); setError("");
     const { data: { user } } = await supabase.auth.getUser();
-    const r = await api.cardDepositInit(amount, user.email);
+    const r = await api.depositInit(amount, "card", user.email);
     setLoading(false);
     const url = r?.authorization_url || r?.url;
     if (url) window.location.href = url;
@@ -359,68 +359,38 @@ export function DepositCard() {
 export function DepositBitcoin() {
   const p = new URLSearchParams(window.location.search);
   const amount = Number(p.get("amount") || 0);
-  const [copied, setCopied] = useState(false);
   const address = "bc1qlp2jy9vm46v9jm6jxlzsakcs9qmtxxujt68jpz";
+  const [copied, setCopied] = useState(false);
   const fmt = amount.toLocaleString("en-NG", { minimumFractionDigits: 2 });
-
-  async function copyAddress() {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(address);
-      } else {
-        const field = document.createElement("textarea");
-        field.value = address;
-        field.setAttribute("readonly", "");
-        field.style.position = "fixed";
-        field.style.opacity = "0";
-        document.body.appendChild(field);
-        field.select();
-        const copiedSuccessfully = document.execCommand("copy");
-        document.body.removeChild(field);
-        if (!copiedSuccessfully) throw new Error("Copy was not successful");
-      }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Unable to copy Bitcoin address:", error);
-      setCopied(false);
-      alert("Could not copy automatically. Please select and copy the address.");
-    }
-  }
 
   return (
     <div className="min-h-screen bg-slate-950 pb-24 text-white">
       <header className="border-b border-blue-400/10 bg-slate-950/95">
-        <div className="mx-auto flex h-20 max-w-2xl items-center px-4">
+        <div className="mx-auto flex h-20 max-w-2xl items-center gap-4 px-4">
+          <a href="/deposit" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
+            <ArrowLeft className="h-5 w-5" />
+          </a>
           <h1 className="text-xl font-bold">Bitcoin Deposit</h1>
         </div>
       </header>
       <main className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-3xl bg-gradient-to-br from-amber-950 to-amber-700 p-6">
           <Bitcoin className="h-8 w-8 text-amber-200" />
-          <p className="mt-6 text-sm text-amber-200">Deposit amount</p>
+          <p className="mt-6 text-sm text-amber-200">Amount</p>
           <h2 className="mt-2 text-3xl font-bold">₦{fmt}</h2>
         </div>
-
         <div className="mt-6 rounded-3xl border border-blue-400/10 bg-slate-900 p-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Bitcoin (BTC) wallet address
-          </p>
-          <p className="mt-3 break-all rounded-xl border border-white/10 bg-slate-950 p-4 font-mono text-sm leading-6 text-white">
-            {address}
-          </p>
-          <button
-            type="button"
-            onClick={copyAddress}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold transition hover:bg-blue-500"
-          >
-            {copied ? <Check size={18} /> : <Copy size={18} />}
-            {copied ? "Copied" : "Copy address"}
+          <p className="text-xs text-slate-500">BTC Address</p>
+          <p className="mt-2 break-all font-mono text-sm">{address}</p>
+          <button onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(address);
+              setCopied(true); window.setTimeout(() => setCopied(false), 2000);
+            } catch { setCopied(false); }
+          }} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 font-semibold">
+            {copied ? <Check /> : <Copy />}{copied ? "Copied" : "Copy Address"}
           </button>
-          <p className="mt-4 text-xs leading-5 text-amber-200">
-            Send BTC on the Bitcoin network only. Do not send USDT, other
-            cryptocurrencies, or funds through another network to this address.
-          </p>
+          <p className="mt-4 text-xs leading-relaxed text-amber-300">Send BTC only to this address. Deposits are not automatically credited by this screen; contact support with your transaction ID after the required network confirmations.</p>
         </div>
       </main>
     </div>

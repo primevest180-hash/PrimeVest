@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Upload, CheckCircle2 } from "lucide-react";
-import { api } from "./app";
+import { api, supabase } from "./app";
 
 export function Invest() {
   const [plans, setPlans] = useState([]);
@@ -148,6 +148,18 @@ export function TradingSimulator() {
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
   const [demoBalance, setDemoBalance] = useState(100000);
+  const [durationId, setDurationId] = useState("quick");
+  const durations = [
+    { id: "quick", label: "Quick trade", multiplier: 2 },
+    { id: "2d", label: "2 days", multiplier: 2.5 },
+    { id: "6d", label: "6 days", multiplier: 3 },
+    { id: "10d", label: "1 week 3 days", multiplier: 5 },
+    { id: "3w", label: "3 weeks", multiplier: 7 },
+    { id: "4w", label: "1 month 4 weeks", multiplier: 10 },
+    { id: "4m", label: "4 months", multiplier: 16 },
+    { id: "1y", label: "1 year", multiplier: 21 },
+  ];
+  const selectedDuration = durations.find((item) => item.id === durationId) || durations[0];
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -170,11 +182,12 @@ export function TradingSimulator() {
     setResult(null);
     window.setTimeout(() => {
       const won = Math.random() > 0.5;
-      const nextBalance = won ? demoBalance + 1000 : demoBalance - amount;
+      const grossPayout = amount * selectedDuration.multiplier;
+      const nextBalance = won ? demoBalance - amount + grossPayout : demoBalance - amount;
       setDemoBalance(nextBalance);
       setResult(won
-        ? `Demo ${type.toUpperCase()} won. ₦1,000 demo profit added.`
-        : `Demo ${type.toUpperCase()} lost. ₦${amount.toLocaleString()} demo funds deducted.`);
+        ? `Demo ${type.toUpperCase()} won (${selectedDuration.label}). Gross demo payout: ₦${grossPayout.toLocaleString()}. This includes your demo stake.`
+        : `Demo ${type.toUpperCase()} lost (${selectedDuration.label}). ₦${amount.toLocaleString()} demo funds deducted.`);
       setIsTrading(false);
       setTradeAmount("");
     }, 1500);
@@ -198,10 +211,15 @@ export function TradingSimulator() {
             ))}
           </div>
           <div className="text-4xl font-black text-white mb-6">₦{price.toFixed(2)}</div>
+          <label className="mb-2 block text-left text-sm text-slate-300">Trade duration</label>
+          <select value={durationId} onChange={(event) => setDurationId(event.target.value)} className="mb-4 w-full rounded-xl border border-white/10 bg-slate-950 p-4 text-white">
+            {durations.map((duration) => <option key={duration.id} value={duration.id}>{duration.label} — {duration.multiplier}× total demo payout</option>)}
+          </select>
           <input type="number" min="1" value={tradeAmount}
             onChange={(event) => setTradeAmount(event.target.value)}
             placeholder="Demo amount (e.g. 5000)"
-            className="w-full bg-slate-950 p-4 rounded-xl outline-none border border-white/10 mb-4 text-center text-xl" />
+            className="w-full bg-slate-950 p-4 rounded-xl outline-none border border-white/10 mb-2 text-center text-xl" />
+          <p className="mb-4 text-xs text-slate-400">Potential gross demo payout: ₦{(Math.max(0, Number(tradeAmount) || 0) * selectedDuration.multiplier).toLocaleString()} (stake included). Losses deduct the demo stake only.</p>
           <div className="grid grid-cols-2 gap-4">
             <button onClick={() => executeTrade("buy")} disabled={isTrading}
               className="bg-emerald-600 hover:bg-emerald-500 py-4 rounded-xl font-bold text-lg disabled:opacity-50">BUY</button>
@@ -216,64 +234,70 @@ export function TradingSimulator() {
   );
 }
 
-// 🚨 AFFILIATE MARKETING PAGE
+// Affiliate proof upload. Rewards are credited only after admin review via a protected database RPC.
 export function AffiliateDashboard() {
-  const [screenshot, setScreenshot] = useState(null);
+  const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [affBalance, setAffBalance] = useState(0);
-  useEffect(() => {
-    let active = true;
-    api.profile().then(({ data }) => {
-      if (active && data) setAffBalance(Number(data.affiliate_balance) || 0);
-    }).catch((err) => console.error("Unable to load affiliate balance:", err));
-    return () => { active = false; };
-  }, []);
+  const [submissions, setSubmissions] = useState([]);
+  const [message, setMessage] = useState("");
 
-  async function handleUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    // 🚨 Security Check: Verify it's an image
-    if (!file.type.startsWith('image/')) return alert("Please upload an image file.");
-    
-    // Selecting an image is not proof of a verified referral. Do not credit
-    // funds in the browser; verification and rewards must be handled server-side.
-    setUploading(true);
-    setScreenshot(file.name);
-    setUploading(false);
-    alert("Proof selected. No reward has been credited; an administrator must verify it first.");
+  async function loadAffiliateData() {
+    const [{ data: profile }, { data: { user } }] = await Promise.all([api.profile(), supabase.auth.getUser()]);
+    if (profile) setAffBalance(Number(profile.affiliate_balance) || 0);
+    if (!user) return;
+    const { data, error } = await supabase.from("affiliate_submissions").select("id,status,reward_amount,admin_note,created_at").eq("user_id", user.id).order("created_at", { ascending: false });
+    if (error) throw error;
+    setSubmissions(data || []);
   }
 
-  async function transferToMain() {
-    if (affBalance <= 0) return alert("No approved affiliate funds are available to transfer.");
-    alert("Affiliate transfers must be processed by a secure server-side transaction. Please contact support; your balance has not been changed.");
+  useEffect(() => { loadAffiliateData().catch((err) => setMessage(err.message)); }, []);
+
+  async function handleUpload() {
+    if (!file) return setMessage("Choose an image first.");
+    if (!file.type.startsWith("image/")) return setMessage("Only image files are accepted.");
+    if (file.size > 8 * 1024 * 1024) return setMessage("Image must be 8 MB or smaller.");
+    setUploading(true); setMessage("");
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Please sign in again.");
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const path = `${user.id}/${crypto.randomUUID()}.${ext || "jpg"}`;
+      const { error: uploadError } = await supabase.storage.from("affiliate-proofs").upload(path, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+      const { error: insertError } = await supabase.from("affiliate_submissions").insert({ user_id: user.id, proof_path: path, status: "pending" });
+      if (insertError) {
+        await supabase.storage.from("affiliate-proofs").remove([path]);
+        throw insertError;
+      }
+      setFile(null);
+      const input = document.getElementById("affiliate-proof-file");
+      if (input) input.value = "";
+      setMessage("Proof submitted. It is now waiting for administrator review; no reward has been credited yet.");
+      await loadAffiliateData();
+    } catch (err) { setMessage(err.message || "Upload failed."); }
+    finally { setUploading(false); }
   }
 
   return (
     <div className="min-h-screen bg-slate-900 text-white pb-24">
-      <header className="border-b border-white/10 p-4 flex justify-between items-center">
-        <a href="/invest" className="inline-flex items-center gap-2 text-sm font-bold"><ArrowLeft size={18} /> Back</a>
-        <p className="text-sm font-bold text-emerald-400">Affiliate Balance: ₦{affBalance.toLocaleString()}</p>
-      </header>
-      
+      <header className="border-b border-white/10 p-4 flex justify-between items-center"><a href="/invest" className="inline-flex items-center gap-2 text-sm font-bold"><ArrowLeft size={18}/> Back</a><p className="text-sm font-bold text-emerald-400">Approved Affiliate Balance: ₦{affBalance.toLocaleString()}</p></header>
       <main className="max-w-2xl mx-auto p-6 space-y-6">
-        <div className="bg-[#0D1526] rounded-2xl p-6 border border-white/10 text-center">
+        <div className="bg-[#0D1526] rounded-2xl p-6 border border-white/10">
           <h1 className="text-2xl font-black mb-2 text-purple-400">Affiliate Marketing</h1>
-          <p className="text-sm text-slate-400 mb-6">Choose a screenshot as a local reference. Proof upload, administrator verification, and reward crediting are not connected yet; no reward is issued by selecting a file.</p>
-
-          <div className="border-2 border-dashed border-white/20 rounded-xl p-8 mb-6">
-            <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
-            <p className="text-sm text-slate-300">Upload Screenshot Proof</p>
-            <input type="file" accept="image/*" onChange={handleUpload} className="hidden" id="file-upload" />
-            <label htmlFor="file-upload" className="mt-4 inline-block bg-blue-600 px-6 py-2 rounded-xl font-bold cursor-pointer hover:bg-blue-500">
-              Choose File
-            </label>
-            {uploading && <p className="mt-3 text-yellow-400 text-sm animate-pulse">Preparing proof...</p>}
-            {screenshot && !uploading && <p className="mt-3 text-amber-300 text-sm">Selected: {screenshot} — awaiting administrator verification.</p>}
+          <p className="text-sm text-slate-400 mb-5">Upload an image showing your affiliate activity. An administrator will review it and enter any verified reward. Uploading alone does not earn or credit money.</p>
+          <div className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center">
+            <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3"/><label htmlFor="affiliate-proof-file" className="block text-sm text-slate-300 mb-3">Choose proof image (max 8 MB)</label>
+            <input id="affiliate-proof-file" type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-300" />
+            {file && <p className="text-xs text-amber-300 mt-3">Selected: {file.name}</p>}
+            <button onClick={handleUpload} disabled={!file || uploading} className="mt-4 w-full bg-blue-600 px-6 py-3 rounded-xl font-bold disabled:opacity-50">{uploading ? "Uploading..." : "Submit Proof for Review"}</button>
           </div>
-
-          <button onClick={transferToMain} className="w-full bg-emerald-600 hover:bg-emerald-500 py-4 rounded-xl font-bold text-lg">Transfer to Main Wallet</button>
+          {message && <p role="status" className="mt-4 text-sm text-amber-200">{message}</p>}
         </div>
+        <section className="bg-[#0D1526] rounded-2xl p-6 border border-white/10">
+          <h2 className="text-lg font-bold mb-4">Your submissions</h2>
+          {submissions.length === 0 ? <p className="text-sm text-slate-400">No submissions yet.</p> : <div className="space-y-3">{submissions.map(item => <div key={item.id} className="rounded-xl bg-slate-950 p-4 flex justify-between gap-3"><div><p className="text-sm font-semibold">{new Date(item.created_at).toLocaleString()}</p>{item.admin_note && <p className="text-xs text-slate-400 mt-1">{item.admin_note}</p>}</div><div className="text-right"><p className={`text-sm font-bold ${item.status === "approved" ? "text-emerald-400" : item.status === "rejected" ? "text-red-400" : "text-amber-300"}`}>{item.status}</p>{Number(item.reward_amount) > 0 && <p className="text-xs text-emerald-300">₦{Number(item.reward_amount).toLocaleString()}</p>}</div></div>)}</div>}
+        </section>
       </main>
     </div>
   );
