@@ -249,7 +249,7 @@ export const api = {
     return supabase.from("transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
   },
 
-  depositInit: (amount, method, email, vip, type) => call("index", { action: "deposit", amount, method, email, vip, type }),
+  cardDepositInit: (amount, email) => call("index", { action: "deposit", amount, method: "card", email }),
 
   withdraw: async (p) => {
     const { data: { user } } = await supabase.auth.getUser();
