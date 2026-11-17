@@ -290,29 +290,16 @@ export const api = {
     return { success: true };
   },
 
-  invest: async (plan_id, amount, daily_profit, matured_at) => {
+  invest: async (plan_id, amount) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Not logged in." };
-    return call("index", { action: "invest", plan_id, amount, daily_profit, matured_at, email: user.email });
+    return call("index", { action: "invest", plan_id, amount });
   },
 
-  claimInvestment: async (investment_id, amount) => {
+  claimInvestment: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, error: "Not logged in." };
-    const { data: inv } = await supabase.from("investments").select("last_daily_claim").eq("id", investment_id).single();
-    if (inv?.last_daily_claim && Date.now() - new Date(inv.last_daily_claim).getTime() < 86400000) {
-      return { success: false, error: "You can only claim once every 24 hours." };
-    }
-    const now = new Date().toISOString();
-    await supabase.from("investments").update({ last_daily_claim: now }).eq("id", investment_id);
-    const { data: w } = await supabase.from("wallets").select("available, earnings, total").eq("user_id", user.id).single();
-    await supabase.from("wallets").update({
-      available: (w?.available || 0) + amount, earnings: (w?.earnings || 0) + amount, total: (w?.total || 0) + amount,
-    }).eq("user_id", user.id);
-    await supabase.from("transactions").insert({
-      user_id: user.id, type: "investment_profit", amount, status: "success", reference: `PROFIT-${Date.now()}`,
-    });
-    return { success: true };
+    return call("index", { action: "settle_matured" });
   },
 
   claimDailyLogin: async () => {

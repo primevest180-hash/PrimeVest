@@ -413,13 +413,13 @@ export function DepositBitcoin() {
 /* =========================== PORTFOLIO / HISTORY =========================== */
 export function Portfolio() {
   const [holdings, setHoldings] = useState([]);
-  const [claiming, setClaiming] = useState(null);
-  const [claimed, setClaimed] = useState({});
+  const [settling, setSettling] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [, setTick] = useState(0);
 
   const load = async () => {
-    const { data } = await api.portfolio();
+    const { data, error } = await api.portfolio();
+    if (error) setToastMsg(error.message || "Unable to load stakes.");
     setHoldings(data || []);
   };
 
@@ -429,65 +429,51 @@ export function Portfolio() {
     return () => clearInterval(id);
   }, []);
 
-  const fmt = (n) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(n || 0);
-
-  const timeLeft = (last) => {
-    if (!last) return null;
-    const diff = new Date(last).getTime() + 86400000 - Date.now();
-    if (diff <= 0) return null;
-    const h = Math.floor(diff / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
-    return `${h}h ${m}m ${s}s`;
+  const fmt = (n) => new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(Number(n || 0));
+  const countdown = (maturity) => {
+    if (!maturity) return "Waiting for start";
+    const diff = new Date(maturity).getTime() - Date.now();
+    if (diff <= 0) return "Matured — payout available";
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    const minutes = Math.floor((diff % 3600000) / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    return `${days}d ${hours}h ${minutes}m ${seconds}s`;
   };
 
-  async function claim(h) {
-    if (claimed[h.id]) return setToastMsg("Wait 24h between claims.");
-    const left = timeLeft(h.last_daily_claim);
-    if (left) return setToastMsg(`Wait ${left}.`);
-    setClaimed(p => ({ ...p, [h.id]: true }));
-    setClaiming(h.id);
-    let amt = 0;
-    if ((h.plans?.name || "").includes("Affiliate")) amt = Math.floor(Math.random() * 1500) + 500;
-    else amt = h.amount * (h.plans.expected_return / 100);
-    const r = await api.claimInvestment(h.id, amt);
-    if (r?.success) { await load(); setToastMsg(`Claimed ${fmt(amt)}!`); }
-    else { setToastMsg(r?.error || "Failed."); setClaimed(p => ({ ...p, [h.id]: false })); }
-    setClaiming(null);
+  async function settle() {
+    setSettling(true);
+    try {
+      const result = await api.claimInvestment();
+      if (!result?.success) throw new Error(result?.error || "Settlement failed.");
+      setToastMsg(result.settled_count ? `${result.settled_count} matured stake(s) settled. Gross payout: ${fmt(result.gross_payout)}.` : "No matured stakes are awaiting payout.");
+      await load();
+    } catch (err) { setToastMsg(err.message || "Unable to settle matured stakes."); }
+    finally { setSettling(false); }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 pb-24 text-white p-4">
       {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg("")} />}
       <header className="mb-6"><a href="/home" className="inline-flex items-center gap-2"><ArrowLeft size={18} /> Back</a></header>
-      <h1 className="text-2xl font-bold mb-4">Active Investments</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5"><h1 className="text-2xl font-bold">My Stakes</h1><button onClick={settle} disabled={settling} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold disabled:opacity-50">{settling ? "Checking..." : "Check matured payouts"}</button></div>
+      <p className="text-sm text-slate-400 mb-6">Each purchased plan is locked for 24 hours. The countdown starts immediately after purchase. Payouts are credited when the plan matures.</p>
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {holdings.map(h => {
-          const left = timeLeft(h.last_daily_claim);
-          const canClaim = !left && !claimed[h.id];
-          const planName = h.plans?.name || "";
-          const display = planName.includes("Affiliate") ? 500 : h.amount * (h.plans.expected_return / 100);
-          return (
-            <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6">
-              <p className="font-bold">{planName}</p>
-              <p className="text-2xl mt-2">{fmt(h.amount)}</p>
-              <p className="text-xs text-slate-500 mt-1">Status: {h.status}</p>
-              {h.status === "active" && (
-                <div className="mt-4">
-                  {left && (
-                    <p className="text-center text-xs text-amber-400 mb-2 flex items-center justify-center gap-1">
-                      <Timer size={14} /> {left}
-                    </p>
-                  )}
-                  <button onClick={() => claim(h)} disabled={!canClaim || claiming === h.id}
-                    className={`w-full rounded-xl py-2 text-sm font-semibold ${canClaim ? "bg-indigo-600" : "bg-slate-800 text-slate-500"}`}>
-                    {claiming === h.id ? "Claiming..." : canClaim ? `Claim ${fmt(display)}` : "Wait"}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
+          const planName = h.plans?.name || "Staking plan";
+          const gross = Number(h.payout_amount || (Number(h.amount || 0) + Number(h.profit_amount || 0)));
+          return <div key={h.id} className="rounded-2xl border border-blue-400/10 bg-slate-900 p-6">
+            <p className="font-bold">{planName}</p>
+            <p className="text-2xl mt-2">{fmt(h.amount)}</p>
+            <p className="text-xs text-slate-400 mt-2">Submitted: {h.requested_at ? new Date(h.requested_at).toLocaleString() : h.started_at ? new Date(h.started_at).toLocaleString() : "—"}</p>
+            <p className="text-xs text-slate-400 mt-1">Status: <span className={h.status === "active" ? "text-emerald-300" : h.status === "pending" ? "text-amber-300" : "text-slate-300"}>{h.status}</span></p>
+            {h.status === "active" && <div className="mt-4 rounded-xl bg-slate-950 p-3"><p className="text-xs text-slate-400">Time to maturity</p><p className="mt-1 font-mono text-amber-300">{countdown(h.matured_at)}</p><p className="text-xs text-slate-500 mt-2">Expected gross payout: {fmt(gross)}</p></div>}
+            {h.status === "pending" && <p className="mt-4 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Your purchase is being processed.</p>}
+            {h.status === "rejected" && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-200">Declined. Reserved funds should have been returned to your available wallet.</p>}
+            {h.status === "matured" && <p className="mt-4 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-200">Settled. Gross payout: {fmt(gross)}.</p>}
+          </div>;
         })}
+        {holdings.length === 0 && <p className="text-slate-400">You have not submitted any stakes yet.</p>}
       </div>
     </div>
   );
