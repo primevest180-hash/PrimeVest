@@ -15,6 +15,7 @@ import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
   Invest, Portfolio, Settings, Help, History, Login, Signup
 } from "./pages";
+import { TradingSimulator, AffiliateDashboard } from "./investment"; // 🚨 ADDED THIS IMPORT
 import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw";
 import { ScratchCard, MysteryBox } from "./scratch_mystery";
 import { VIP, VIPCheckout } from "./VIP";
@@ -872,6 +873,11 @@ function App() {
           <Route path="/home" element={<HomePage />} />
           <Route path="/vip" element={<VIP />} />
           <Route path="/vip/checkout" element={<VIPCheckout />} />
+          
+          {/* 🚨 NEW ROUTES ADDED */}
+          <Route path="/trading-simulator" element={<TradingSimulator />} />
+          <Route path="/affiliate" element={<AffiliateDashboard />} />
+          
           <Route path="/invest" element={<Invest />} />
           <Route path="/hamster" element={<HamsterGame />} />
           <Route path="/hamster/checkout" element={<HamsterCheckout />} />
