@@ -13,9 +13,9 @@ import {
 import Terms from "./terms";
 import {
   Deposit, DepositPayment, DepositCard, DepositBitcoin,
-  Invest, Portfolio, Settings, Help, History, Login, Signup
+  Portfolio, Settings, Help, History, Login, Signup
 } from "./pages";
-import { TradingSimulator, AffiliateDashboard } from "./investment"; // 🚨 ADDED THIS IMPORT
+import { Invest, TradingSimulator, AffiliateDashboard } from "./investment";
 import { Withdraw, WithdrawAccount, WithdrawSuccess } from "./withdraw";
 import { ScratchCard, MysteryBox } from "./scratch_mystery";
 import { VIP, VIPCheckout } from "./VIP";
