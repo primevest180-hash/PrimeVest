@@ -18,8 +18,6 @@ export function AdminDashboard() {
 
   const [withdrawals, setWithdrawals] = useState([]);
   const [users, setUsers] = useState([]);
-  const [affiliateSubmissions, setAffiliateSubmissions] = useState([]);
-  const [pendingStakes, setPendingStakes] = useState([]);
   
   // Chat states
   const [allMessages, setAllMessages] = useState([]);
@@ -42,34 +40,19 @@ export function AdminDashboard() {
   async function loadData() {
     setDataLoading(true);
     try {
-      const [w, u, s, adminMsg, privateMsg, announcementResult, affiliateResult, stakeResult] = await Promise.all([
+      const [w, u, s, adminMsg, privateMsg, announcementResult] = await Promise.all([
         api.getAdminWithdrawals(),
         api.getAllUsers(),
         api.getAdminStats(),
         supabase.from("admin_messages").select("*").order("created_at", { ascending: true }),
         supabase.from("private_messages").select("*").order("created_at", { ascending: true }),
-        supabase.from("global_announcements").select("*").eq("id", 1).single(),
-        api.getAdminAffiliateSubmissions(),
-        api.getAdminPendingStakes()
+        supabase.from("global_announcements").select("*").eq("id", 1).single()
       ]);
 
       setWithdrawals(w?.data || []);
       setUsers(u?.data || []);
-      if (stakeResult?.error) throw new Error(stakeResult.error);
-      setPendingStakes(stakeResult?.data || []);
       setAllMessages(adminMsg.data || []);
       setPrivateMessages(privateMsg.data || []);
-
-      if (affiliateResult?.error) throw affiliateResult.error;
-      const affiliateRows = affiliateResult?.data || [];
-      const enrichedAffiliateRows = await Promise.all(affiliateRows.map(async (item) => {
-        const [{ data: profile }, { data: signed }] = await Promise.all([
-          supabase.from("profiles").select("name,email,username").eq("id", item.user_id).maybeSingle(),
-          supabase.storage.from("affiliate-proofs").createSignedUrl(item.proof_path, 300),
-        ]);
-        return { ...item, profile, proof_url: signed?.signedUrl || null };
-      }));
-      setAffiliateSubmissions(enrichedAffiliateRows);
 
       if (announcementResult.data) {
         setAnnouncementText(announcementResult.data.message || "");
@@ -113,46 +96,11 @@ export function AdminDashboard() {
 
   async function login(e) {
     e.preventDefault();
+    if (password !== "2468") return setError("Incorrect password.");
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return setError("Please sign in first.");
-    const { data: adminProfile } = await supabase.from("profiles").select("is_admin").eq("id", user.id).maybeSingle();
-    if (!ADMIN_UUIDS.includes(user.id) && !adminProfile?.is_admin) return setError("Unauthorized admin.");
+    if (authError || !user || !ADMIN_UUIDS.includes(user.id)) return setError("Unauthorized admin.");
     setAuthed(true);
     await loadData();
-  }
-
-  async function reviewStake(item, decision) {
-    const reason = decision === "rejected" ? (window.prompt("Reason for declining this stake:", "") || "") : "";
-    if (!window.confirm(`${decision === "approved" ? "Approve" : "Decline"} this ₦${Number(item.amount).toLocaleString()} stake?`)) return;
-    setProcessing(item.id);
-    try {
-      const result = await api.reviewStake(item.id, decision, reason);
-      if (!result?.success) throw new Error(result?.error || "Stake review failed");
-      alert(`Stake ${decision}.`);
-      await loadData();
-    } catch (err) { alert(`Stake review failed: ${err.message}`); }
-    finally { setProcessing(null); }
-  }
-
-  async function reviewAffiliate(item, decision) {
-    let reward = 0;
-    let note = "";
-    if (decision === "approved") {
-      const entered = window.prompt("Enter the verified reward amount in NGN (enter 0 if no reward):", "0");
-      if (entered === null) return;
-      reward = Number(entered);
-      if (!Number.isFinite(reward) || reward < 0) return alert("Enter a valid reward amount.");
-    }
-    note = window.prompt("Optional note for the user:", "") || "";
-    if (!window.confirm(`${decision === "approved" ? "Approve" : "Reject"} this affiliate proof?`)) return;
-    setProcessing(item.id);
-    try {
-      const result = await api.reviewAffiliateSubmission(item.id, decision, reward, note);
-      if (!result.success) throw new Error(result.error || "Review failed.");
-      alert(`Affiliate proof ${decision}.`);
-      await loadData();
-    } catch (err) { alert(`Review failed: ${err.message}`); }
-    finally { setProcessing(null); }
   }
 
   async function approve(w) {
@@ -240,7 +188,7 @@ export function AdminDashboard() {
         <form onSubmit={login} className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0D1526] p-8 text-center">
           <LockIcon className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-6">Admin Access</h1>
-          <p className="text-sm text-slate-400 mb-4">Administrator access is checked against your authenticated Supabase account.</p>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Enter Password" autoFocus className="w-full rounded-xl bg-slate-950 px-4 py-3 text-white outline-none mb-4" />
           {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
           <button type="submit" className="w-full rounded-xl bg-amber-600 py-3 font-bold text-black">Login</button>
         </form>
@@ -298,8 +246,6 @@ export function AdminDashboard() {
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setTab("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "dashboard" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Dashboard</button>
           <button onClick={() => setTab("users")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "users" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Users size={18} /> Manage Users</button>
-          <button onClick={() => setTab("stakes")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "stakes" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Stake Requests ({pendingStakes.length})</button>
-          <button onClick={() => setTab("affiliate")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "affiliate" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Wallet size={18} /> Affiliate Proofs ({affiliateSubmissions.length})</button>
           <button onClick={() => setTab("referrals")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "referrals" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><UserPlus size={18} /> Refer Clicks</button>
           <button onClick={() => setTab("announcements")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "announcements" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}><Megaphone size={18} /> Announcements</button>
           <button onClick={() => setTab("messages")} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition ${tab === "messages" ? "bg-amber-500/10 text-amber-400" : "text-slate-400 hover:bg-white/5"}`}>
@@ -317,8 +263,6 @@ export function AdminDashboard() {
           <select onChange={(e) => setTab(e.target.value)} value={tab} className="bg-slate-900 text-white text-sm rounded-lg px-2 py-1 outline-none">
             <option value="dashboard">Dashboard</option>
             <option value="users">Users</option>
-            <option value="stakes">Stake Requests ({pendingStakes.length})</option>
-            <option value="affiliate">Affiliate Proofs ({affiliateSubmissions.length})</option>
             <option value="referrals">Referrals</option>
             <option value="announcements">Announcements</option>
             <option value="messages">Inbox ({totalUnreadAdmin})</option>
@@ -376,45 +320,6 @@ export function AdminDashboard() {
                 ))}
                 {users.filter(u => u.last_refer_click).length === 0 && <p className="text-slate-400">No refer clicks yet.</p>}
               </div>
-            </div>
-          )}
-
-          {tab === "stakes" && (
-            <div className="max-w-5xl mx-auto space-y-6">
-              <div className="flex items-center justify-between gap-3"><h2 className="text-2xl font-bold">Pending Stake Requests</h2><button onClick={loadData} className="rounded-lg bg-slate-800 px-3 py-2 text-xs hover:bg-slate-700 flex items-center gap-2"><RefreshCw size={14} /> Refresh</button></div>
-              <p className="text-sm text-slate-400">Review requests before activation. Approval starts the maturity clock; rejection returns reserved funds to the user's available wallet.</p>
-              {pendingStakes.length === 0 ? <div className="rounded-2xl border border-white/5 bg-[#0D1526] p-8 text-center text-slate-500">No pending stake requests.</div> : pendingStakes.map(item => (
-                <div key={item.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div><p className="font-bold">{item.plans?.name || "Staking plan"} — ₦{Number(item.amount).toLocaleString()}</p><p className="text-sm text-slate-400">{item.profile?.name || item.profile?.username || "User"} · {item.profile?.email || item.user_id}</p><p className="text-xs text-slate-500 mt-1">Submitted: {item.requested_at ? new Date(item.requested_at).toLocaleString() : "Pending approval"} · Duration: {item.duration_days || "Not set"} days · Expected return: {Number(item.expected_return_snapshot || 0)}%</p></div>
-                  <div className="flex gap-2"><button onClick={() => reviewStake(item, "approved")} disabled={processing === item.id} className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-bold disabled:opacity-50">Approve</button><button onClick={() => reviewStake(item, "rejected")} disabled={processing === item.id} className="rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-2 text-sm font-bold text-red-300 disabled:opacity-50">Decline</button></div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab === "affiliate" && (
-            <div className="max-w-5xl mx-auto space-y-6">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold">Affiliate Proof Review</h2>
-                <button onClick={loadData} className="rounded-lg bg-slate-800 px-3 py-2 text-xs hover:bg-slate-700 flex items-center gap-2"><RefreshCw size={14} /> Refresh</button>
-              </div>
-              <p className="text-sm text-slate-400">Review each uploaded image before approving or rejecting it. A reward is credited only by the database review function after approval.</p>
-              {affiliateSubmissions.length === 0 ? <div className="rounded-2xl border border-white/5 bg-[#0D1526] p-8 text-center text-slate-500">No pending affiliate proofs.</div> : affiliateSubmissions.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-white/10 bg-[#0D1526] p-5 grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,1fr)]">
-                  <div>
-                    {item.proof_url ? <a href={item.proof_url} target="_blank" rel="noreferrer"><img src={item.proof_url} alt="Affiliate proof submitted by user" className="w-full max-h-80 rounded-xl object-contain bg-slate-950" /></a> : <div className="rounded-xl bg-slate-950 p-8 text-sm text-red-300">Image unavailable. Check storage access and the proof path.</div>}
-                  </div>
-                  <div className="space-y-3">
-                    <div><p className="font-bold">{item.profile?.name || item.profile?.username || "User"}</p><p className="text-sm text-slate-400">{item.profile?.email || item.user_id}</p></div>
-                    <p className="text-xs text-slate-500">Submitted: {new Date(item.created_at).toLocaleString()}</p>
-                    <p className="text-sm">Status: <span className="font-bold text-amber-300">{item.status}</span></p>
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      <button onClick={() => reviewAffiliate(item, "approved")} disabled={processing === item.id} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold disabled:opacity-50">Approve & Set Reward</button>
-                      <button onClick={() => reviewAffiliate(item, "rejected")} disabled={processing === item.id} className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300 disabled:opacity-50">Reject</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
 
